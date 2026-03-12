@@ -1,85 +1,90 @@
-# Embedded Repo Auto-Update System
+name: Update Embedded Repos
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  update-embedded-repos:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-This repository uses GitHub Actions to keep embedded repositories synchronized with their upstream sources. It does not use Git submodules.
+      - name: Sync embedded repositories
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-## Workflow
+          sync_repo() {
+            local dir="$1"
+            local url="$2"
+            local ref="${3:-}"
+            local tmp
+            if git ls-tree HEAD "$dir" | grep -q '^160000 '; then
+              git rm -f "$dir"
+            fi
+            tmp="$(mktemp -d)"
+            if [ -n "$ref" ]; then
+              git clone --depth 1 --branch "$ref" "$url" "$tmp"
+            else
+              git clone --depth 1 "$url" "$tmp"
+            fi
+            rm -rf "$tmp/.git"
+            mkdir -p "$dir"
+            rsync -a --delete "$tmp"/ "$dir"/
+            rm -rf "$tmp"
+          }
 
-### Update Embedded Repos (`.github/workflows/update-submodules.yml`)
+          sync_repo "Lampac"          "https://github.com/lampac-talks/lampac"
+          sync_repo "lampa-source"    "https://github.com/yumata/lampa-source"
+          sync_repo "lampac-ukraine"  "https://github.com/lampame/lampac-ukraine"
 
-**Purpose**: Clones upstream repositories and syncs their files into local directories.
+          if [ -f .gitmodules ]; then
+            git rm -f .gitmodules || true
+          fi
 
-**Behavior**:
-- Runs daily at 02:00 UTC
-- Can be triggered manually via `workflow_dispatch`
-- Syncs `Lampac/` and `lampa-source/` via clone + rsync
-- Commits and pushes directly to `main`
-- Only commits when changes are detected
+          if git diff --quiet HEAD; then
+            echo "No embedded repo updates found"
+          else
+            git add .
+            git commit -m "chore: sync embedded repositories"
+            git push origin main
+          fi
 
-## How It Works
+      - name: Sync latest publish.zip as release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
 
-1. **Checkout**: The repository is checked out normally.
-2. **Clone**: Upstream repos are cloned into temporary directories.
-3. **Sync**: Contents are rsynced into `Lampac/` and `lampa-source/` (excluding `.git`).
-4. **Detect**: A git diff determines whether updates exist.
-5. **Commit**: If changes exist, a commit is created.
-6. **Push**: Updates are pushed to `main`.
+          # Отримати інфо про останній реліз
+          LATEST=$(curl -s https://api.github.com/repos/lampac-talks/lampac/releases/latest)
+          VERSION=$(echo "$LATEST" | grep '"tag_name"' | cut -d '"' -f 4)
+          ZIP_URL=$(echo "$LATEST" | grep "browser_download_url.*publish.zip" | cut -d '"' -f 4)
 
-## Manual Repo Updates
+          echo "Latest version: $VERSION"
+          echo "ZIP URL: $ZIP_URL"
 
-```bash
-# Sync Lampac
-(tmp="$(mktemp -d)" \
-  && git clone --depth 1 https://github.com/immisterio/Lampac "$tmp" \
-  && rm -rf "$tmp/.git" \
-  && rsync -a --delete "$tmp"/ Lampac/ \
-  && rm -rf "$tmp")
+          # Перевірити чи реліз вже існує в нашому репо
+          if gh release view "$VERSION" --repo marv2on/LampaC > /dev/null 2>&1; then
+            echo "Release $VERSION already exists, skipping."
+            exit 0
+          fi
 
-# Sync lampa-source
-(tmp="$(mktemp -d)" \
-  && git clone --depth 1 https://github.com/yumata/lampa-source "$tmp" \
-  && rm -rf "$tmp/.git" \
-  && rsync -a --delete "$tmp"/ lampa-source/ \
-  && rm -rf "$tmp")
-```
+          # Скачати publish.zip
+          curl -L "$ZIP_URL" -o /tmp/publish.zip
+          echo "Downloaded: $(du -sh /tmp/publish.zip | cut -f1)"
 
-## Configuration
+          # Створити реліз і завантажити файл
+          gh release create "$VERSION" /tmp/publish.zip \
+            --repo marv2on/LampaC \
+            --title "Lampac $VERSION" \
+            --notes "Auto-synced from lampac-talks/lampac release $VERSION"
 
-### Schedule
-Edit the cron schedule in the workflow file:
-
-```yaml
-schedule:
-  - cron: '0 2 * * *'  # Daily at 02:00 UTC
-```
-
-Common cron examples:
-- `0 2 * * *` - Daily at 02:00 UTC
-- `0 */6 * * *` - Every 6 hours
-- `0 2 * * 0` - Weekly on Sunday at 02:00 UTC
-- `0 2 1 * *` - Monthly on the 1st at 02:00 UTC
-
-### Permissions
-The workflow requires:
-- `contents: write` to commit and push changes.
-
-## Benefits
-
-1. **Automation**: Regular updates without manual work.
-2. **Deepwiki-friendly**: Files live in the main repo for indexing.
-3. **Transparency**: All updates are traceable via commits.
-4. **Safety**: No commits if there are no changes.
-
-## Security Notes
-
-- Uses `GITHUB_TOKEN` with minimal permissions.
-- Commits are authored by `github-actions[bot]`.
-- Updates are pushed directly to `main`.
-
-## Troubleshooting
-
-If the workflow fails:
-
-1. Check the Actions tab for logs.
-2. Ensure upstream repositories are reachable.
-3. Verify branch protection allows `github-actions[bot]` to push.
-4. Confirm Actions permissions include `contents: write`.
+          echo "Release $VERSION created with publish.zip"
