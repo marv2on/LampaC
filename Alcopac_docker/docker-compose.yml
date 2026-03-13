@@ -1,0 +1,31 @@
+services:
+  alcopac:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: alcopac:0.2c
+    container_name: alcopac
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      LAMPAC_GO_ADDR: "0.0.0.0:18118"
+      LAMPAC_GO_REPO_ROOT: "/opt/lampac"
+      LAMPAC_GO_CACHE_DIR: "/opt/lampac/cache"
+      LAMPAC_GO_LOCAL_CORE: "${LAMPAC_GO_LOCAL_CORE:-true}"
+      LAMPAC_GO_FALLBACK_ENABLE: "${LAMPAC_GO_FALLBACK_ENABLE:-false}"
+    ports:
+      - "${LAMPAC_GO_PORT:-18118}:18118"
+    volumes:
+      # ---------- конфигурация ----------
+      - ./config:/opt/lampac/config
+      # ---------- пользовательские данные ----------
+      - ./database:/opt/lampac/database
+      # ---------- кэш + aeskey ----------
+      - ./cache:/opt/lampac/cache
+      # ---------- torrserver (accs.db) ----------
+      - ./torrserver:/opt/lampac/torrserver
+      # ---------- data (veoveo и др.) ----------
+      - ./data:/opt/lampac/data
+      # ---------- пользовательские плагины (загруженные через админку) ----------
+      - ./plugins_custom:/opt/lampac/plugins/custom
