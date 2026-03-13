@@ -41,19 +41,19 @@ jobs:
             rm -rf "$tmp"
           }
 
-          sync_repo "Lampac"          "https://github.com/lampac-talks/lampac"
-          sync_repo "lampa-source"    "https://github.com/yumata/lampa-source"
-          sync_repo "lampac-ukraine"  "https://github.com/lampame/lampac-ukraine"
-          sync_repo "Alcopac_docker"  "https://github.com/Kirill9732/Alcopac_docker"
+          sync_repo "Lampac"         "https://github.com/lampac-talks/lampac"
+          sync_repo "lampa-source"   "https://github.com/yumata/lampa-source"
+          sync_repo "lampac-ukraine" "https://github.com/lampame/lampac-ukraine"
+          sync_repo "Alcopac_docker" "https://github.com/Kirill9732/Alcopac_docker"
 
           if [ -f .gitmodules ]; then
             git rm -f .gitmodules || true
           fi
 
-          if git diff --quiet HEAD; then
+          git add .
+          if git diff --cached --quiet; then
             echo "No embedded repo updates found"
           else
-            git add .
             git commit -m "chore: sync embedded repositories"
             git push origin main
           fi
@@ -64,7 +64,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Отримати інфо про останній реліз
           LATEST=$(curl -s https://api.github.com/repos/lampac-talks/lampac/releases/latest)
           VERSION=$(echo "$LATEST" | grep '"tag_name"' | cut -d '"' -f 4)
           ZIP_URL=$(echo "$LATEST" | grep "browser_download_url.*publish.zip" | cut -d '"' -f 4)
@@ -72,17 +71,14 @@ jobs:
           echo "Latest version: $VERSION"
           echo "ZIP URL: $ZIP_URL"
 
-          # Перевірити чи реліз вже існує в нашому репо
           if gh release view "$VERSION" --repo marv2on/LampaC > /dev/null 2>&1; then
             echo "Release $VERSION already exists, skipping."
             exit 0
           fi
 
-          # Скачати publish.zip
           curl -L "$ZIP_URL" -o /tmp/publish.zip
           echo "Downloaded: $(du -sh /tmp/publish.zip | cut -f1)"
 
-          # Створити реліз і завантажити файл
           gh release create "$VERSION" /tmp/publish.zip \
             --repo marv2on/LampaC \
             --title "Lampac $VERSION" \
