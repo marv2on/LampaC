@@ -1,0 +1,12 @@
+{
+  "files.associations": {
+    "crontab": "properties",
+    "example.yaml": "yaml",
+    "example.conf": "jsonc",
+    "init.yaml": "yaml",
+    "init.conf": "json",
+  },
+  "[csharp]": {
+    "editor.tabSize": 4
+  },
+}

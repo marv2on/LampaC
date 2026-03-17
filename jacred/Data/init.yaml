@@ -1,0 +1,58 @@
+listenip: any
+listenport: 9117
+apikey: ""
+devkey: ""
+mergeduplicates: true
+mergenumduplicates: true
+openstats: true
+opensync: false
+opensync_v1: false
+web: true
+log: false
+logFdb: false
+logFdbRetentionDays: 7
+logFdbMaxSizeMb: 0
+logFdbMaxFiles: 0
+logParsers: false
+syncapi: ""
+synctrackers:
+  - rutracker
+  - rutor
+  - kinozal
+  - nnmclub
+  - megapeer
+  - bitru
+  - toloka
+  - mazepa
+  - lostfilm
+  - baibako
+  - torrentby
+  - selezen
+  - animelayer
+  - anidub
+  - aniliberty
+  - knaben
+disable_trackers: []
+syncsport: false
+syncspidr: false
+maxreadfile: 250
+fdbPathLevels: 2
+tracks: false
+trackslog: false
+trackscategory: jacred
+tracksdelay: 20000
+tracksatempt: 20
+tracksmod: 0
+tracksinterval:
+  task1: 60
+  task0: 180
+tsuri:
+  - http://127.0.0.1:8090
+timeStatsUpdate: 15
+timeSync: 120
+timeSyncSpidr: 360
+evercache:
+  enable: false
+  validHour: 1
+  maxOpenWriteTask: 200
+  dropCacheTake: 200

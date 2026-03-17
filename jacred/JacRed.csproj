@@ -1,0 +1,73 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <UserSecretsId>7a9d4585-3e95-4564-a350-5fe756d1351f</UserSecretsId>
+    <AssemblyName>JacRed</AssemblyName>
+    <RootNamespace>JacRed</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Data\**" />
+    <Compile Remove="VersionInfo.g.cs" />
+    <Content Remove="Data\**" />
+    <Content Remove="temp\**" />
+    <Content Remove="router\**" />
+    <Content Remove="dist\**" />
+    <EmbeddedResource Remove="Data\**" />
+    <EmbeddedResource Remove="temp\**" />
+    <EmbeddedResource Remove="router\**" />
+    <EmbeddedResource Remove="dist\**" />
+    <None Remove="Data\**" />
+    <None Remove="temp\**" />
+    <None Remove="router\**" />
+    <None Remove="dist\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Data\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Exclude large test data files from being copied during publish -->
+    <Content Remove="Data\fdb\**" />
+    <Content Remove="Data\masterDb.bz" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="wwwroot\css\*" />
+    <None Include="wwwroot\img\*.svg" />
+    <None Include="wwwroot\img\ico\*" />
+    <None Include="wwwroot\index.html" />
+    <None Include="wwwroot\js\*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BencodeNET" Version="5.0.0" />
+    <PackageReference Include="MonoTorrent" Version="3.0.2" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="YamlDotNet" Version="15.1.0" />
+  </ItemGroup>
+
+  <!--<PropertyGroup>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+  </PropertyGroup>-->
+
+  <!-- Version generation from Git -->
+  <PropertyGroup>
+    <VersionInfoFile>$(IntermediateOutputPath)VersionInfo.g.cs</VersionInfoFile>
+    <GenerateVersionScript>$(MSBuildProjectDirectory)/generate-version.sh</GenerateVersionScript>
+  </PropertyGroup>
+
+  <Target Name="GenerateVersionInfo" BeforeTargets="BeforeCompile">
+    <!-- Ensure intermediate output directory exists -->
+    <MakeDir Directories="$(IntermediateOutputPath)" Condition="!Exists('$(IntermediateOutputPath)')" />
+    
+    <!-- Generate version info file using bash script -->
+    <Exec Command="bash &quot;$(GenerateVersionScript)&quot; &quot;$(VersionInfoFile)&quot;" 
+          IgnoreExitCode="false"
+          WorkingDirectory="$(MSBuildProjectDirectory)" />
+
+    <ItemGroup>
+      <Compile Include="$(VersionInfoFile)" />
+    </ItemGroup>
+  </Target>
+
+</Project>
