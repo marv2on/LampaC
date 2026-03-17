@@ -45,6 +45,7 @@ jobs:
           sync_repo "lampa-source"   "https://github.com/yumata/lampa-source"
           sync_repo "lampac-ukraine" "https://github.com/lampame/lampac-ukraine"
           sync_repo "Alcopac_docker" "https://github.com/Kirill9732/Alcopac_docker"
+          sync_repo "jacred"         "https://github.com/jacred-fdb/jacred"
 
           if [ -f .gitmodules ]; then
             git rm -f .gitmodules || true
