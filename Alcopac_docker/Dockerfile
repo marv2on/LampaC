@@ -25,18 +25,27 @@ RUN if [ ! -x /usr/bin/node ] && [ -x /usr/bin/nodejs ]; then ln -s /usr/bin/nod
 WORKDIR /opt/lampac
 
 # ── бинарники ──
+# TORRS=true → use binary with embedded TorrServer (default)
+# TORRS=false → use standard binary (separate TorrServer needed)
+ARG TORRS=true
+
 COPY app/lampac-go-amd64 /tmp/lampac-go-amd64
 COPY app/lampac-go-arm64 /tmp/lampac-go-arm64
+COPY app/lampac-go-amd64-torr[s] /tmp/lampac-go-amd64-torrs
+COPY app/lampac-go-arm64-torr[s] /tmp/lampac-go-arm64-torrs
 
 RUN set -eux; \
     ARCH="$(dpkg --print-architecture)"; \
-    case "$ARCH" in \
-      amd64) cp /tmp/lampac-go-amd64 /usr/local/bin/lampac-go ;; \
-      arm64) cp /tmp/lampac-go-arm64 /usr/local/bin/lampac-go ;; \
-      *) echo "Unsupported architecture: $ARCH"; exit 1 ;; \
-    esac; \
+    SUFFIX=""; \
+    if [ "$TORRS" = "true" ]; then SUFFIX="-torrs"; fi; \
+    SRC="/tmp/lampac-go-${ARCH}${SUFFIX}"; \
+    if [ ! -f "$SRC" ]; then \
+      echo "Binary not found: $SRC (TORRS=$TORRS), falling back to standard"; \
+      SRC="/tmp/lampac-go-${ARCH}"; \
+    fi; \
+    cp "$SRC" /usr/local/bin/lampac-go; \
     chmod +x /usr/local/bin/lampac-go; \
-    rm -f /tmp/lampac-go-amd64 /tmp/lampac-go-arm64
+    rm -f /tmp/lampac-go-*
 
 # ── yt-dlp ──
 RUN set -eux; \

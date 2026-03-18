@@ -97,7 +97,7 @@
 
     if (lampainit_invc) lampainit_invc.appready();
 
-    // Always sync plugins from server — add any missing ones.
+    // Always sync plugins from server — add missing, remove disabled.
     // After a Lampa version update the client may clear localStorage,
     // wiping the plugin list.  By the time this code runs (app:ready)
     // Lampa has already initialised its plugin system with an empty list,
@@ -107,6 +107,25 @@
     var plugins_add = [{initiale}];
     var plugins_push = [];
 
+    // Build a set of active plugin URLs for fast lookup.
+    var activeUrls = {};
+    plugins_add.forEach(function(p) { activeUrls[p.url] = true; });
+
+    // Remove server-managed plugins that admin has disabled.
+    // Only touch plugins whose URL starts with this server's host
+    // (user-installed plugins from other sources are left alone).
+    var serverUrl = '{localhost}/';
+    var toRemove = [];
+    plugins.forEach(function(p) {
+      if (p.url && p.url.indexOf(serverUrl) === 0 && !activeUrls[p.url]) {
+        toRemove.push(p);
+      }
+    });
+    toRemove.forEach(function(p) {
+      Lampa.Plugins.remove(p);
+    });
+
+    // Add plugins that are not yet installed.
     plugins_add.forEach(function(plugin) {
       if (!plugins.find(function(a) {
           return a.url == plugin.url;
@@ -117,18 +136,20 @@
       }
     });
 
-    if (plugins_push.length) {
-      // Plugins were re-injected (likely after a Lampa update).
-      // Reload once so the client picks them up during its normal
-      // init sequence.  sessionStorage flag prevents an infinite loop.
+    if (plugins_push.length || toRemove.length) {
+      // Plugins were added or removed — reload once so the client
+      // picks up the change during its normal init sequence.
+      // sessionStorage flag prevents an infinite loop.
       if (!sessionStorage.getItem('lampac_plugins_reload')) {
         sessionStorage.setItem('lampac_plugins_reload', '1');
         location.reload();
         return;
       }
-      // Second pass after reload — flag is set, load scripts normally.
+      // Second pass after reload — flag is set, load new scripts normally.
       sessionStorage.removeItem('lampac_plugins_reload');
-      Lampa.Utils.putScript(plugins_push, function() {}, function() {}, function() {}, true);
+      if (plugins_push.length) {
+        Lampa.Utils.putScript(plugins_push, function() {}, function() {}, function() {}, true);
+      }
     }
 
     if (Lampa.Storage.get('lampac_initiale', 'false')) return;

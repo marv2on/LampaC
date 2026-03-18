@@ -306,6 +306,11 @@
     // ═══ PAUSE OVERLAY ═════════════════════════════
 
     '.player .player-video__paused {',
+    '  position: absolute !important;',
+    '  left: 50% !important;',
+    '  top: 50% !important;',
+    '  margin: 0 !important;',
+    '  transform: translate(-50%, -50%) !important;',
     '  background: rgba(0,0,0,0.25) !important;',
     '  backdrop-filter: blur(16px) saturate(1.5) !important;',
     '  -webkit-backdrop-filter: blur(16px) saturate(1.5) !important;',
@@ -314,25 +319,35 @@
     '  animation: lpr-pause-breathe 3s ease-in-out infinite !important;',
     '  width: 6em !important;',
     '  height: 6em !important;',
-    '  margin-left: -3em !important;',
-    '  margin-top: -3em !important;',
+    '  pointer-events: none !important;',
+    '  z-index: 61 !important;',
     '}',
 
     '.player .player-video__paused svg {',
+    '  position: absolute !important;',
+    '  left: 50% !important;',
+    '  top: 50% !important;',
+    '  transform: translate(-50%, -50%) !important;',
     '  filter: drop-shadow(0 0 12px rgba(255,255,255,0.4));',
-    '  width: 50%;',
-    '  height: 50%;',
+    '  width: 2em !important;',
+    '  height: 2em !important;',
+    '  max-width: none !important;',
+    '  max-height: none !important;',
     '}',
 
     // ═══ LOADING SPINNER ═══════════════════════════
 
     '.player .player-video__loader {',
+    '  position: absolute !important;',
+    '  left: 50% !important;',
+    '  top: 50% !important;',
+    '  transform: translate(-50%, -50%) !important;',
     '  background-image: none !important;',
     '  background-color: transparent !important;',
     '  width: 5em !important;',
     '  height: 5em !important;',
-    '  margin-left: -2.5em !important;',
-    '  margin-top: -2.5em !important;',
+    '  margin-left: 0 !important;',
+    '  margin-top: 0 !important;',
     '  border: 3px solid rgba(255,255,255,0.08) !important;',
     '  border-top-color: rgba(255,200,130,0.9) !important;',
     '  border-right-color: rgba(255,140,80,0.6) !important;',
@@ -340,6 +355,8 @@
     '  animation: lpr-spinner-rotate 0.7s ease-in-out infinite !important;',
     '  box-shadow: 0 0 30px rgba(255,180,100,0.15), inset 0 0 20px rgba(255,180,100,0.05);',
     '  padding: 0 !important;',
+    '  pointer-events: none !important;',
+    '  z-index: 62 !important;',
     '}',
 
     // ═══ SEEK INDICATORS ═══════════════════════════
@@ -388,6 +405,17 @@
     '  font-size: 0.85em;',
     '  opacity: 0.85;',
     '  letter-spacing: 0.04em;',
+    '  min-width: 5.5em !important;',
+    '  white-space: nowrap !important;',
+    '  line-height: 1.2 !important;',
+    '}',
+
+    '.player .player-panel__timenow {',
+    '  text-align: left !important;',
+    '}',
+
+    '.player .player-panel__timeend {',
+    '  text-align: right !important;',
     '}',
 
     // ── Time tooltip ─────────────────────────────
@@ -510,6 +538,57 @@
     '  box-shadow: 0 0 8px rgba(255,160,80,0.4);',
     '}',
 
+
+    // ═══ TV LAYOUT FIXES ═══════════════════════════
+
+    '.player .player-info {',
+    '  box-sizing: border-box !important;',
+    '  left: 2.2em !important;',
+    '  right: 2.2em !important;',
+    '  top: 1.2em !important;',
+    '  width: auto !important;',
+    '  max-width: calc(100% - 4.4em) !important;',
+    '  padding-left: 1em !important;',
+    '  padding-right: 1em !important;',
+    '}',
+
+    '.player .player-panel {',
+    '  box-sizing: border-box !important;',
+    '  left: 1.8em !important;',
+    '  right: 1.8em !important;',
+    '  bottom: 1.4em !important;',
+    '  width: auto !important;',
+    '  max-width: calc(100% - 3.6em) !important;',
+    '}',
+
+    '.player .player-panel__timeline {',
+    '  position: relative !important;',
+    '  margin-left: 0 !important;',
+    '  margin-right: 0 !important;',
+    '}',
+
+    '.player .player-video__backwork-icon,',
+    '.player .player-video__forward-icon {',
+    '  position: absolute !important;',
+    '  top: 50% !important;',
+    '  transform: translateY(-50%) !important;',
+    '  margin: 0 !important;',
+    '}',
+
+    '.player .player-video__backwork-icon {',
+    '  left: 4.5% !important;',
+    '}',
+
+    '.player .player-video__forward-icon {',
+    '  right: 4.5% !important;',
+    '}',
+
+    '.player .player-panel .button,',
+    '.player .player-panel .button svg,',
+    '.player .player-panel__quality {',
+    '  vertical-align: middle !important;',
+    '}',
+
     // ═══ RESPONSIVE ════════════════════════════════
 
     '@media screen and (max-width: 480px) {',
@@ -534,11 +613,46 @@
     '  .lpr-gradient-bottom { height: 140px; }',
     '  .lpr-gradient-top { height: 90px; }',
     '  .lpr-ambient { display: none; }',
-    '  .player .player-video__paused { width: 4em !important; height: 4em !important; margin-left: -2em !important; margin-top: -2em !important; }',
+    '  .player .player-video__paused { width: 4.8em !important; height: 4.8em !important; }',
+    '  .player .player-video__paused svg { width: 1.6em !important; height: 1.6em !important; }',
     '}',
 
     '@media screen and (max-width: 767px) {',
     '  .player .player-panel__playpause { font-size: 1.6em !important; }',
+    '  .player .player-info {',
+    '    left: 0.8em !important;',
+    '    right: 0.8em !important;',
+    '    top: 0.5em !important;',
+    '    max-width: calc(100% - 1.6em) !important;',
+    '  }',
+    '  .player .player-panel {',
+    '    left: 0.8em !important;',
+    '    right: 0.8em !important;',
+    '    bottom: 0.8em !important;',
+    '    max-width: calc(100% - 1.6em) !important;',
+    '  }',
+    '}',
+
+
+    '@media screen and (max-width: 767px) {',
+    '  .player .player-video__loader { left: 50% !important; top: 50% !important; transform: translate(-50%, -50%) !important; }',
+    '  .player .player-video__paused { left: 50% !important; top: 50% !important; transform: translate(-50%, -50%) !important; }',
+    '  .player .player-video__paused svg { left: 50% !important; top: 50% !important; transform: translate(-50%, -50%) !important; }',
+    '}',
+
+    '@media screen and (min-width: 900px) {',
+    '  .player .player-info {',
+    '    top: 1.4em !important;',
+    '    left: 2.6em !important;',
+    '    right: 2.6em !important;',
+    '    max-width: calc(100% - 5.2em) !important;',
+    '  }',
+    '  .player .player-panel {',
+    '    left: 2.2em !important;',
+    '    right: 2.2em !important;',
+    '    bottom: 1.6em !important;',
+    '    max-width: calc(100% - 4.4em) !important;',
+    '  }',
     '}',
 
   ].join('\n');

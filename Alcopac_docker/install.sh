@@ -29,6 +29,7 @@ IMAGE_NAME="alcopac"
 ACTION=""
 TORRSERVER_PORT=9080
 INSTALL_TORR=false
+TORR_VARIANT="embedded"  # "embedded" (built into lampac-go) or "separate" (standalone binary)
 
 # ── вспомогательные функции ──
 
@@ -248,6 +249,9 @@ do_install() {
   if [ ! -f "$ROOT_DIR/app/lampac-go-amd64" ] || [ ! -f "$ROOT_DIR/app/lampac-go-arm64" ]; then
     err "Не найдены бинарники app/lampac-go-amd64 и/или app/lampac-go-arm64. Проверьте комплект."
   fi
+  if [ -f "$ROOT_DIR/app/lampac-go-amd64-torrs" ]; then
+    info "Доступны варианты: стандартный и со встроенным TorrServer"
+  fi
 
   if is_container_exists; then
     warn "Контейнер ${BOLD}${CONTAINER_NAME}${NC} уже существует."
@@ -294,6 +298,11 @@ do_install() {
   echo ""
   if [ "$(ask_yn "Установить TorrServer?" "n")" = "true" ]; then
     INSTALL_TORR=true
+    if [ "$(ask_yn "Встроить TorrServer в бинарник? (рекомендуется)" "y")" = "true" ]; then
+      TORR_VARIANT="embedded"
+    else
+      TORR_VARIANT="separate"
+    fi
   fi
 
   # ─── Шаг 3: Подготовка файлов ──────────────────────────
@@ -323,35 +332,63 @@ do_install() {
   step 4 "TorrServer"
 
   if [ "$INSTALL_TORR" = "true" ]; then
-    local torr_dir="$ROOT_DIR/app/torrserver"
-    mkdir -p "$torr_dir"
+    mkdir -p "$ROOT_DIR/app/torrserver" "$ROOT_DIR/torrserver"
 
-    local torr_arch=""
-    case "$TARGET_ARCH" in
-      amd64) torr_arch="amd64" ;;
-      arm64) torr_arch="arm64" ;;
-    esac
+    if [ "$TORR_VARIANT" = "embedded" ]; then
+      # Embedded: TorrServer is compiled into lampac-go binary (torrs build tag).
+      # Set TORRS=true in .env so docker-compose passes it as build arg.
+      sed -i.bak "s/^TORRS=.*/TORRS=true/" "$ROOT_DIR/.env" 2>/dev/null \
+        || sed -i '' "s/^TORRS=.*/TORRS=true/" "$ROOT_DIR/.env" 2>/dev/null \
+        || echo "TORRS=true" >> "$ROOT_DIR/.env"
+      rm -f "$ROOT_DIR/.env.bak"
 
-    info "Скачиваю TorrServer..."
-    if curl -fSL --progress-bar -o "${torr_dir}/TorrServer-linux" \
-        "https://github.com/YouROK/TorrServer/releases/latest/download/TorrServer-linux-${torr_arch}" 2>/dev/null; then
-      chmod 0755 "${torr_dir}/TorrServer-linux"
-
-      # accs.db с паролем (если нет)
       if [ ! -f "$ROOT_DIR/torrserver/accs.db" ]; then
         local ts_passwd
         ts_passwd=$(head -c 8 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 10)
         echo "{\"ts\":\"${ts_passwd}\"}" > "$ROOT_DIR/torrserver/accs.db"
         chmod 0600 "$ROOT_DIR/torrserver/accs.db"
-        log "TorrServer установлен (пароль: ${BOLD}${ts_passwd}${NC})"
+        log "TorrServer встроен в lampac-go (пароль: ${BOLD}${ts_passwd}${NC})"
       else
-        log "TorrServer установлен (accs.db уже существует)"
+        log "TorrServer встроен в lampac-go (accs.db уже существует)"
       fi
     else
-      warn "Не удалось скачать TorrServer"
-      INSTALL_TORR=false
+      # Separate: download standalone TorrServer-linux binary
+      sed -i.bak "s/^TORRS=.*/TORRS=false/" "$ROOT_DIR/.env" 2>/dev/null \
+        || sed -i '' "s/^TORRS=.*/TORRS=false/" "$ROOT_DIR/.env" 2>/dev/null \
+        || echo "TORRS=false" >> "$ROOT_DIR/.env"
+      rm -f "$ROOT_DIR/.env.bak"
+
+      local torr_arch=""
+      case "$TARGET_ARCH" in
+        amd64) torr_arch="amd64" ;;
+        arm64) torr_arch="arm64" ;;
+      esac
+
+      info "Скачиваю TorrServer..."
+      if curl -fSL --progress-bar -o "$ROOT_DIR/app/torrserver/TorrServer-linux" \
+          "https://github.com/YouROK/TorrServer/releases/latest/download/TorrServer-linux-${torr_arch}" 2>/dev/null; then
+        chmod 0755 "$ROOT_DIR/app/torrserver/TorrServer-linux"
+
+        if [ ! -f "$ROOT_DIR/torrserver/accs.db" ]; then
+          local ts_passwd
+          ts_passwd=$(head -c 8 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 10)
+          echo "{\"ts\":\"${ts_passwd}\"}" > "$ROOT_DIR/torrserver/accs.db"
+          chmod 0600 "$ROOT_DIR/torrserver/accs.db"
+          log "TorrServer установлен (пароль: ${BOLD}${ts_passwd}${NC})"
+        else
+          log "TorrServer установлен (accs.db уже существует)"
+        fi
+      else
+        warn "Не удалось скачать TorrServer"
+        INSTALL_TORR=false
+      fi
     fi
   else
+    # No TorrServer — use standard binary
+    sed -i.bak "s/^TORRS=.*/TORRS=false/" "$ROOT_DIR/.env" 2>/dev/null \
+      || sed -i '' "s/^TORRS=.*/TORRS=false/" "$ROOT_DIR/.env" 2>/dev/null \
+      || echo "TORRS=false" >> "$ROOT_DIR/.env"
+    rm -f "$ROOT_DIR/.env.bak"
     warn "Пропущено"
   fi
 
@@ -422,6 +459,8 @@ do_install() {
   step 6 "Права доступа"
 
   chmod 0755 "$ROOT_DIR/app/lampac-go-amd64" "$ROOT_DIR/app/lampac-go-arm64"
+  [ -f "$ROOT_DIR/app/lampac-go-amd64-torrs" ] && chmod 0755 "$ROOT_DIR/app/lampac-go-amd64-torrs"
+  [ -f "$ROOT_DIR/app/lampac-go-arm64-torrs" ] && chmod 0755 "$ROOT_DIR/app/lampac-go-arm64-torrs"
   [ -d "$ROOT_DIR/app/bin" ] && find "$ROOT_DIR/app/bin" -type f -exec chmod 0755 {} \;
   [ -f "$ROOT_DIR/app/torrserver/TorrServer-linux" ] && chmod 0755 "$ROOT_DIR/app/torrserver/TorrServer-linux"
 
@@ -604,7 +643,13 @@ do_update() {
     arm64) torr_arch="arm64" ;;
   esac
 
-  if [ -f "$ROOT_DIR/app/torrserver/TorrServer-linux" ]; then
+  # Check if using embedded TorrServer (TORRS=true in .env)
+  local uses_embedded="false"
+  grep -q "^TORRS=true" "$ROOT_DIR/.env" 2>/dev/null && uses_embedded="true"
+
+  if [ "$uses_embedded" = "true" ]; then
+    log "TorrServer встроен в lampac-go — обновится вместе с бинарником"
+  elif [ -f "$ROOT_DIR/app/torrserver/TorrServer-linux" ]; then
     info "Обновляю TorrServer..."
     if curl -fSL --progress-bar -o "$ROOT_DIR/app/torrserver/TorrServer-linux" \
         "https://github.com/YouROK/TorrServer/releases/latest/download/TorrServer-linux-${torr_arch}" 2>/dev/null; then
@@ -616,29 +661,46 @@ do_update() {
   else
     # TorrServer не установлен — предложить доустановить
     if [ "$(ask_yn "TorrServer не установлен. Установить?" "n")" = "true" ]; then
-      mkdir -p "$ROOT_DIR/app/torrserver"
-      info "Скачиваю TorrServer..."
-      if curl -fSL --progress-bar -o "$ROOT_DIR/app/torrserver/TorrServer-linux" \
-          "https://github.com/YouROK/TorrServer/releases/latest/download/TorrServer-linux-${torr_arch}" 2>/dev/null; then
-        chmod 0755 "$ROOT_DIR/app/torrserver/TorrServer-linux"
-
+      if [ "$(ask_yn "Встроить TorrServer в бинарник? (рекомендуется)" "y")" = "true" ]; then
+        # Switch to embedded
+        sed -i.bak "s/^TORRS=.*/TORRS=true/" "$ROOT_DIR/.env" 2>/dev/null \
+          || sed -i '' "s/^TORRS=.*/TORRS=true/" "$ROOT_DIR/.env" 2>/dev/null \
+          || echo "TORRS=true" >> "$ROOT_DIR/.env"
+        rm -f "$ROOT_DIR/.env.bak"
+        mkdir -p "$ROOT_DIR/torrserver"
         if [ ! -f "$ROOT_DIR/torrserver/accs.db" ]; then
           local ts_passwd
           ts_passwd=$(head -c 8 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 10)
           echo "{\"ts\":\"${ts_passwd}\"}" > "$ROOT_DIR/torrserver/accs.db"
           chmod 0600 "$ROOT_DIR/torrserver/accs.db"
         fi
-
-        # Включить в конфиге
-        if [ -f "$CONFIG_DIR/init.json" ] && command -v jq >/dev/null 2>&1; then
-          local tmp_conf="$CONFIG_DIR/init.json.tmp"
-          jq '.TorrServer.enable = true | .TorrServer.port = 9080 | .LampaWeb.initPlugins.torrserver = true' \
-            "$CONFIG_DIR/init.json" > "$tmp_conf" && mv "$tmp_conf" "$CONFIG_DIR/init.json"
-        fi
-
-        log "TorrServer установлен"
+        log "TorrServer будет встроен в lampac-go при пересборке"
       else
-        warn "Не удалось скачать TorrServer"
+        # Separate download
+        mkdir -p "$ROOT_DIR/app/torrserver"
+        info "Скачиваю TorrServer..."
+        if curl -fSL --progress-bar -o "$ROOT_DIR/app/torrserver/TorrServer-linux" \
+            "https://github.com/YouROK/TorrServer/releases/latest/download/TorrServer-linux-${torr_arch}" 2>/dev/null; then
+          chmod 0755 "$ROOT_DIR/app/torrserver/TorrServer-linux"
+
+          if [ ! -f "$ROOT_DIR/torrserver/accs.db" ]; then
+            local ts_passwd
+            ts_passwd=$(head -c 8 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 10)
+            echo "{\"ts\":\"${ts_passwd}\"}" > "$ROOT_DIR/torrserver/accs.db"
+            chmod 0600 "$ROOT_DIR/torrserver/accs.db"
+          fi
+
+          # Включить в конфиге
+          if [ -f "$CONFIG_DIR/init.json" ] && command -v jq >/dev/null 2>&1; then
+            local tmp_conf="$CONFIG_DIR/init.json.tmp"
+            jq '.TorrServer.enable = true | .TorrServer.port = 9080 | .LampaWeb.initPlugins.torrserver = true' \
+              "$CONFIG_DIR/init.json" > "$tmp_conf" && mv "$tmp_conf" "$CONFIG_DIR/init.json"
+          fi
+
+          log "TorrServer установлен"
+        else
+          warn "Не удалось скачать TorrServer"
+        fi
       fi
     else
       info "TorrServer — пропускаю"

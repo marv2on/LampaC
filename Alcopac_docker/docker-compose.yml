@@ -3,7 +3,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: alcopac:0.2c
+      args:
+        TORRS: "${TORRS:-true}"
+    image: alcopac:0.3
     container_name: alcopac
     restart: unless-stopped
     env_file:

@@ -1,6 +1,8 @@
 (function() {
   'use strict';
 
+  {batch-transcoding}
+
   var Defined = {
     api: 'lampac',
     localhost: '{localhost}/',
@@ -123,7 +125,13 @@
     }
     if (url.indexOf('token=') == -1) {
       var token = '{token}';
-      if (token != '') url = Lampa.Utils.addUrlComponent(url, 'token={token}');
+      if (!token) {
+        try { var m = document.cookie.match(/(?:^|;\s*)lampac_token=([^;]+)/); if (m) token = decodeURIComponent(m[1]); } catch(e) {}
+      }
+      if (!token) {
+        try { token = localStorage.getItem('lampac_auth_token') || ''; } catch(e) {}
+      }
+      if (token) url = Lampa.Utils.addUrlComponent(url, 'token=' + encodeURIComponent(token));
     }
     if (url.indexOf('fp=') == -1 && device_fp) {
       url = Lampa.Utils.addUrlComponent(url, 'fp=' + encodeURIComponent(device_fp));
@@ -716,8 +724,15 @@
                   element.voice_index = _this5.getChoice(balanser).voice || 0;
                 }
                 {player-inner}
-                Lampa.Player.play(element);
-                Lampa.Player.playlist(playlist);
+                if (window.__batchTranscoding && playlist.length > 1) {
+                  window.__batchTranscoding.start(element, playlist).then(function(){
+                    Lampa.Player.play(element);
+                    Lampa.Player.playlist(playlist);
+                  });
+                } else {
+                  Lampa.Player.play(element);
+                  Lampa.Player.playlist(playlist);
+                }
 				if(element.subtitles_call) _this5.loadSubtitles(element.subtitles_call)
                 item.mark();
                 _this5.updateBalanser(balanser);
