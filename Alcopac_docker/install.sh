@@ -298,9 +298,20 @@ do_install() {
   echo ""
   if [ "$(ask_yn "Установить TorrServer?" "n")" = "true" ]; then
     INSTALL_TORR=true
-    if [ "$(ask_yn "Встроить TorrServer в бинарник? (рекомендуется)" "y")" = "true" ]; then
-      TORR_VARIANT="embedded"
+    # Check if -torrs binaries are available for embedded mode
+    HAS_TORRS=false
+    if [ -f "$ROOT_DIR/app/lampac-go-amd64-torrs" ] || [ -f "$ROOT_DIR/app/lampac-go-arm64-torrs" ]; then
+      HAS_TORRS=true
+    fi
+    if [ "$HAS_TORRS" = "true" ]; then
+      if [ "$(ask_yn "Встроить TorrServer в бинарник? (рекомендуется)" "y")" = "true" ]; then
+        TORR_VARIANT="embedded"
+      else
+        TORR_VARIANT="separate"
+      fi
     else
+      warn "Бинарники со встроенным TorrServer (-torrs) не найдены."
+      info "Будет установлен отдельный TorrServer."
       TORR_VARIANT="separate"
     fi
   fi
@@ -627,11 +638,19 @@ do_update() {
   fi
 
   chmod 0755 "$ROOT_DIR/app/lampac-go-amd64" "$ROOT_DIR/app/lampac-go-arm64"
+  # Also chmod -torrs variants if present
+  [ -f "$ROOT_DIR/app/lampac-go-amd64-torrs" ] && chmod 0755 "$ROOT_DIR/app/lampac-go-amd64-torrs"
+  [ -f "$ROOT_DIR/app/lampac-go-arm64-torrs" ] && chmod 0755 "$ROOT_DIR/app/lampac-go-arm64-torrs"
 
   local new_amd new_arm
   new_amd=$(stat -c%s "$ROOT_DIR/app/lampac-go-amd64" 2>/dev/null || stat -f%z "$ROOT_DIR/app/lampac-go-amd64" 2>/dev/null || echo "?")
   new_arm=$(stat -c%s "$ROOT_DIR/app/lampac-go-arm64" 2>/dev/null || stat -f%z "$ROOT_DIR/app/lampac-go-arm64" 2>/dev/null || echo "?")
   info "Бинарники: amd64=${BOLD}${new_amd}${NC} arm64=${BOLD}${new_arm}${NC}"
+  if [ -f "$ROOT_DIR/app/lampac-go-${TARGET_ARCH}-torrs" ]; then
+    local torrs_size
+    torrs_size=$(stat -c%s "$ROOT_DIR/app/lampac-go-${TARGET_ARCH}-torrs" 2>/dev/null || stat -f%z "$ROOT_DIR/app/lampac-go-${TARGET_ARCH}-torrs" 2>/dev/null || echo "?")
+    info "Бинарник с TorrServer: ${BOLD}${torrs_size}${NC}"
+  fi
 
   # ─── Шаг 3: Обновление TorrServer ──────────────────────
 
@@ -661,7 +680,9 @@ do_update() {
   else
     # TorrServer не установлен — предложить доустановить
     if [ "$(ask_yn "TorrServer не установлен. Установить?" "n")" = "true" ]; then
-      if [ "$(ask_yn "Встроить TorrServer в бинарник? (рекомендуется)" "y")" = "true" ]; then
+      local has_torrs_bins="false"
+      [ -f "$ROOT_DIR/app/lampac-go-amd64-torrs" ] || [ -f "$ROOT_DIR/app/lampac-go-arm64-torrs" ] && has_torrs_bins="true"
+      if [ "$has_torrs_bins" = "true" ] && [ "$(ask_yn "Встроить TorrServer в бинарник? (рекомендуется)" "y")" = "true" ]; then
         # Switch to embedded
         sed -i.bak "s/^TORRS=.*/TORRS=true/" "$ROOT_DIR/.env" 2>/dev/null \
           || sed -i '' "s/^TORRS=.*/TORRS=true/" "$ROOT_DIR/.env" 2>/dev/null \

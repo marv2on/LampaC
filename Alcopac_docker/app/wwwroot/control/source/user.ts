@@ -96,13 +96,51 @@ function renderUsersPage(containerId: string) {
     // Модальное окно для добавления пользователя (без полей ban и ban_msg)
     const addModalHtml = getUserModalHtml('addUserModal', 'Добавить пользователя', undefined, nextMonthDate, false, false);
 
+    const promoModalHtml = `
+    <div class="modal fade" id="promoModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Промокоды</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row g-2 mb-3">
+              <div class="col-auto">
+                <label class="form-label mb-1">Кол-во</label>
+                <input type="number" class="form-control form-control-sm" id="promo-count" value="1" min="1" max="100" style="width:80px">
+              </div>
+              <div class="col-auto">
+                <label class="form-label mb-1">Дней доступа</label>
+                <input type="number" class="form-control form-control-sm" id="promo-days" value="30" min="1" style="width:90px">
+              </div>
+              <div class="col-auto">
+                <label class="form-label mb-1">Макс. исп.</label>
+                <input type="number" class="form-control form-control-sm" id="promo-max-uses" value="1" min="0" style="width:80px" title="0 = безлимит">
+              </div>
+              <div class="col-auto">
+                <label class="form-label mb-1">Срок (часы)</label>
+                <input type="number" class="form-control form-control-sm" id="promo-valid-hours" value="0" min="0" style="width:90px" title="0 = бессрочно">
+              </div>
+              <div class="col-auto d-flex align-items-end">
+                <button class="btn btn-success btn-sm" id="promo-generate-btn">Сгенерировать</button>
+              </div>
+            </div>
+            <div id="promo-list-container"><div class="text-muted">Загрузка...</div></div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
     container.innerHTML = `
         ${addModalHtml}
+        ${promoModalHtml}
         <div id="edit-user-modal-container"></div>
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h1 class="mb-0">Пользователи</h1>
             <div>
                 <button type="button" class="btn btn-success" id="btn-add-user">Добавить пользователя</button>
+                <button type="button" class="btn btn-outline-primary ms-2" id="btn-promo">Промокоды</button>
                 <button type="button" class="btn btn-light ms-2" id="btn-users-settings" title="Настройки" style="vertical-align: middle;">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" class="bi bi-gear" viewBox="0 0 16 16">
                         <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/>
@@ -136,6 +174,43 @@ function renderUsersPage(containerId: string) {
                 // @ts-ignore
                 const modal = new bootstrap.Modal(document.getElementById('addUserModal'));
                 modal.show();
+            };
+        }
+
+        // Кнопка "Промокоды"
+        const btnPromo = document.getElementById('btn-promo');
+        if (btnPromo) {
+            btnPromo.onclick = () => {
+                // @ts-ignore
+                const modal = new bootstrap.Modal(document.getElementById('promoModal'));
+                modal.show();
+                loadPromoList();
+            };
+        }
+
+        // Генерация промокодов
+        const promoGenBtn = document.getElementById('promo-generate-btn');
+        if (promoGenBtn) {
+            promoGenBtn.onclick = async () => {
+                const count = parseInt((document.getElementById('promo-count') as HTMLInputElement).value) || 1;
+                const days = parseInt((document.getElementById('promo-days') as HTMLInputElement).value) || 30;
+                const maxUses = parseInt((document.getElementById('promo-max-uses') as HTMLInputElement).value) || 1;
+                const validHours = parseInt((document.getElementById('promo-valid-hours') as HTMLInputElement).value) || 0;
+                try {
+                    const resp = await fetch('api/promo', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'generate', count, days, max_uses: maxUses, valid_hours: validHours })
+                    });
+                    const data = await resp.json();
+                    if (data.ok) {
+                        loadPromoList();
+                    } else {
+                        alert(data.error || 'Ошибка генерации');
+                    }
+                } catch (e) {
+                    alert('Ошибка сети');
+                }
             };
         }
 
@@ -568,3 +643,69 @@ function renderUsers(users: any[]): string {
         </table>
     `;
 }
+
+async function loadPromoList() {
+    const container = document.getElementById('promo-list-container');
+    if (!container) return;
+    container.innerHTML = '<div class="text-muted">Загрузка...</div>';
+    try {
+        const resp = await fetch('api/promo');
+        const codes: any[] = await resp.json();
+        if (!codes || codes.length === 0) {
+            container.innerHTML = '<div class="text-muted">Нет промокодов</div>';
+            return;
+        }
+        container.innerHTML = `
+            <table class="table table-sm table-bordered">
+                <thead>
+                    <tr>
+                        <th>Код</th>
+                        <th>Дней</th>
+                        <th>Исп.</th>
+                        <th>Макс.</th>
+                        <th>Создан</th>
+                        <th>Истекает</th>
+                        <th>Статус</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${codes.map(c => `
+                        <tr>
+                            <td><code>${c.code}</code></td>
+                            <td>${c.days}</td>
+                            <td>${c.used_count}</td>
+                            <td>${c.max_uses || '∞'}</td>
+                            <td>${c.created_at || ''}</td>
+                            <td>${c.expires_at || '—'}</td>
+                            <td>${c.valid ? '<span class="badge bg-success">Активен</span>' : '<span class="badge bg-secondary">Недейств.</span>'}</td>
+                            <td><button class="btn btn-sm btn-outline-danger" onclick="deletePromo('${c.code}')">✕</button></td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+    } catch (e) {
+        container.innerHTML = '<div class="text-danger">Ошибка загрузки</div>';
+    }
+}
+
+// @ts-ignore
+window.deletePromo = async function(code: string) {
+    if (!confirm('Удалить промокод ' + code + '?')) return;
+    try {
+        const resp = await fetch('api/promo', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'delete', code })
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            loadPromoList();
+        } else {
+            alert(data.error || 'Ошибка удаления');
+        }
+    } catch (e) {
+        alert('Ошибка сети');
+    }
+};
