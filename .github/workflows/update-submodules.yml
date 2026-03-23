@@ -14,17 +14,18 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Sync embedded repositories
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+          # sync_repo <local-dir> <repo-url> [branch] [subdir-in-repo]
           sync_repo() {
             local dir="$1"
             local url="$2"
             local ref="${3:-}"
+            local subdir="${4:-}"
             local tmp
             if git ls-tree HEAD "$dir" | grep -q '^160000 '; then
               git rm -f "$dir"
@@ -37,24 +38,27 @@ jobs:
             fi
             rm -rf "$tmp/.git"
             mkdir -p "$dir"
-            rsync -a --delete "$tmp"/ "$dir"/
+            if [ -n "$subdir" ]; then
+              rsync -a --delete "$tmp/$subdir"/ "$dir"/
+            else
+              rsync -a --delete "$tmp"/ "$dir"/
+            fi
             rm -rf "$tmp"
           }
 
-          sync_repo "Lampac"         "https://github.com/lampac-talks/lampac"
-          sync_repo "lampa-source"   "https://github.com/yumata/lampa-source"
-          sync_repo "lampac-ukraine" "https://github.com/lampame/lampac-ukraine"
-          sync_repo "Alcopac_docker" "https://github.com/Kirill9732/Alcopac_docker"
-          sync_repo "jacred"         "https://github.com/jacred-fdb/jacred"
-          sync_repo "jacred-jackett" "https://github.com/egorrrmiller/jacred" 
-          sync_repo "siaivo.github.io"         "https://github.com/Siaivo/siaivo.github.io/"
-          sync_repo "siaivo.github.io.rework" "https://github.com/Siaivo/siaivo.github.io/tree/rework" 
-          sync_repo "siaivo.github.io.src/custom" "https://github.com/Siaivo/siaivo.github.io/tree/rework/src/custom" 
-          sync_repo "TorrServer/tgbot" "https://github.com/YouROK/TorrServer/tree/master/server/tgbot"          
+          sync_repo "Lampac"            "https://github.com/lampac-talks/lampac"
+          sync_repo "lampa-source"      "https://github.com/yumata/lampa-source"
+          sync_repo "lampac-ukraine"    "https://github.com/lampame/lampac-ukraine"
+          sync_repo "Alcopac_docker"    "https://github.com/Kirill9732/Alcopac_docker"
+          sync_repo "jacred"            "https://github.com/jacred-fdb/jacred"
+          sync_repo "jacred-jackett"    "https://github.com/egorrrmiller/jacred"
+          sync_repo "siaivo-custom"     "https://github.com/Siaivo/siaivo.github.io"  "rework" "src/custom"
+          sync_repo "siaivo-main"       "https://github.com/Siaivo/siaivo.github.io"  "main"
+          sync_repo "torrserver-tgbot"  "https://github.com/YouROK/TorrServer"         "master" "server/tgbot"
+
           if [ -f .gitmodules ]; then
             git rm -f .gitmodules || true
           fi
-
           git add .
           if git diff --cached --quiet; then
             echo "No embedded repo updates found"
@@ -62,31 +66,24 @@ jobs:
             git commit -m "chore: sync embedded repositories"
             git push origin main
           fi
-
       - name: Sync latest publish.zip as release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-
           LATEST=$(curl -s https://api.github.com/repos/lampac-talks/lampac/releases/latest)
           VERSION=$(echo "$LATEST" | grep '"tag_name"' | cut -d '"' -f 4)
           ZIP_URL=$(echo "$LATEST" | grep "browser_download_url.*publish.zip" | cut -d '"' -f 4)
-
           echo "Latest version: $VERSION"
           echo "ZIP URL: $ZIP_URL"
-
           if gh release view "$VERSION" --repo marv2on/LampaC > /dev/null 2>&1; then
             echo "Release $VERSION already exists, skipping."
             exit 0
           fi
-
           curl -L "$ZIP_URL" -o /tmp/publish.zip
           echo "Downloaded: $(du -sh /tmp/publish.zip | cut -f1)"
-
           gh release create "$VERSION" /tmp/publish.zip \
             --repo marv2on/LampaC \
             --title "Lampac $VERSION" \
             --notes "Auto-synced from lampac-talks/lampac release $VERSION"
-
           echo "Release $VERSION created with publish.zip"
