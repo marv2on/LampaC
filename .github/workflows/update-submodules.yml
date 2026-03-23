@@ -47,7 +47,7 @@ jobs:
           sync_repo "Alcopac_docker" "https://github.com/Kirill9732/Alcopac_docker"
           sync_repo "jacred"         "https://github.com/jacred-fdb/jacred"
           sync_repo "jacred-jackett" "https://github.com/egorrrmiller/jacred" 
-          sync_repo "siaivo.github.io"         "https://github.com/Siaivo/siaivo.github.io/tree/main"
+          sync_repo "siaivo.github.io"         "https://github.com/Siaivo/siaivo.github.io/"
           sync_repo "siaivo.github.io.rework" "https://github.com/Siaivo/siaivo.github.io/tree/rework" 
           sync_repo "siaivo.github.io.src/custom" "https://github.com/Siaivo/siaivo.github.io/tree/rework/src/custom" 
           sync_repo "TorrServer/tgbot" "https://github.com/YouROK/TorrServer/tree/master/server/tgbot"          
