@@ -50,6 +50,7 @@ jobs:
           sync_repo "siaivo.github.io"         "https://github.com/Siaivo/siaivo.github.io/tree/main"
           sync_repo "siaivo.github.io.rework" "https://github.com/Siaivo/siaivo.github.io/tree/rework" 
           sync_repo "siaivo.github.io.src/custom" "https://github.com/Siaivo/siaivo.github.io/tree/rework/src/custom" 
+          sync_repo "TorrServer/tgbot" "https://github.com/YouROK/TorrServer/tree/master/server/tgbot"          
           if [ -f .gitmodules ]; then
             git rm -f .gitmodules || true
           fi
