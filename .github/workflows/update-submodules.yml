@@ -55,6 +55,7 @@ jobs:
           sync_repo "siaivo-custom"     "https://github.com/Siaivo/siaivo.github.io"  "rework" "src/custom"
           sync_repo "siaivo-main"       "https://github.com/Siaivo/siaivo.github.io"  "main"
           sync_repo "torrserver-tgbot"  "https://github.com/YouROK/TorrServer"         "master" "server/tgbot"
+          sync_repo "lampac-nextgen"    "https://github.com/lampac-nextgen/lampac"         
 
           if [ -f .gitmodules ]; then
             git rm -f .gitmodules || true
