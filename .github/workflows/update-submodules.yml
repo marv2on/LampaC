@@ -66,8 +66,9 @@ jobs:
           git commit -m "chore: sync embedded repositories"
           git push origin main
 
-      # ── Release: lampac-talks → prefix "talks-" ──────────────────────────
+      # ── Release: lampac-talks ────────────────────────────────────────────
       - name: Sync lampac-talks release
+        id: talks_release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -76,20 +77,23 @@ jobs:
           VERSION=$(echo "$LATEST" | grep '"tag_name"' | cut -d'"' -f4)
           ZIP_URL=$(echo "$LATEST" | grep 'browser_download_url.*publish\.zip' | cut -d'"' -f4)
           TAG="talks-${VERSION}"
-          echo "talks latest: $VERSION → release tag: $TAG"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           if gh release view "$TAG" > /dev/null 2>&1; then
             echo "Release $TAG already exists, skipping."
+            echo "new_release=false" >> "$GITHUB_OUTPUT"
           else
             curl -L "$ZIP_URL" -o /tmp/talks-publish.zip
-            echo "Downloaded: $(du -sh /tmp/talks-publish.zip | cut -f1)"
             gh release create "$TAG" /tmp/talks-publish.zip \
               --title "Lampac talks $VERSION" \
               --notes "Auto-synced from lampac-talks/lampac release $VERSION"
             echo "Release $TAG created"
+            echo "new_release=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # ── Release: lampac-nextgen → prefix "nextgen-" ──────────────────────
+      # ── Release: lampac-nextgen ──────────────────────────────────────────
       - name: Sync lampac-nextgen release
+        id: nextgen_release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -97,61 +101,59 @@ jobs:
           LATEST=$(curl -sf https://api.github.com/repos/lampac-nextgen/lampac/releases/latest)
           VERSION=$(echo "$LATEST" | grep '"tag_name"' | cut -d'"' -f4)
           TAG="nextgen-${VERSION}"
-          echo "nextgen latest: $VERSION → release tag: $TAG"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           if gh release view "$TAG" > /dev/null 2>&1; then
             echo "Release $TAG already exists, skipping."
+            echo "new_release=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # Качаємо всі assets з релізу
           ASSET_URLS=$(echo "$LATEST" | grep 'browser_download_url' | cut -d'"' -f4)
           FILES=""
           i=0
           while IFS= read -r url; do
             [ -z "$url" ] && continue
-            fname="/tmp/nextgen-asset-${i}"
-            curl -L "$url" -o "$fname"
-            # Зберігаємо оригінальне ім'я файлу
             origname=$(basename "$url")
-            mv "$fname" "/tmp/${origname}"
+            curl -L "$url" -o "/tmp/${origname}"
             FILES="$FILES /tmp/${origname}"
             i=$((i+1))
           done <<< "$ASSET_URLS"
           if [ -z "$FILES" ]; then
-            echo "No assets found for nextgen release $VERSION, skipping."
+            echo "No assets found, skipping."
+            echo "new_release=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           gh release create "$TAG" $FILES \
             --title "Lampac NextGen $VERSION" \
             --notes "Auto-synced from lampac-nextgen/lampac release $VERSION"
           echo "Release $TAG created"
+          echo "new_release=true" >> "$GITHUB_OUTPUT"
 
-      # ── Docker mirror ────────────────────────────────────────────────────
+      # ── Docker ───────────────────────────────────────────────────────────
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Login to GitHub Container Registry
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Check lampac-talks Docker image
-        id: talks_check
-        run: |
-          set -euo pipefail
-          UPSTREAM=$(docker buildx imagetools inspect ghcr.io/lampac-talks/lampac:latest \
-            --format '{{json .Manifest.Digest}}' 2>/dev/null | tr -d '"' || echo "")
-          OUR=$(docker buildx imagetools inspect ghcr.io/marv2on/lampac-talks:latest \
-            --format '{{json .Manifest.Digest}}' 2>/dev/null | tr -d '"' || echo "")
-          if [ -n "$UPSTREAM" ] && [ "$UPSTREAM" != "$OUR" ]; then
-            echo "needs_mirror=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "needs_mirror=false" >> "$GITHUB_OUTPUT"
-          fi
+      # Build з Dockerfile папки Lampac/ (lampac-talks)
+      - name: Build and push lampac-talks Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./Lampac
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/marv2on/lampac-talks:latest
+            ghcr.io/marv2on/lampac-talks:${{ steps.talks_release.outputs.version }}
+          cache-from: type=gha,scope=lampac-talks
+          cache-to: type=gha,mode=max,scope=lampac-talks
 
-      - name: Mirror lampac-talks Docker image
-        if: steps.talks_check.outputs.needs_mirror == 'true'
-        run: |
-          docker buildx imagetools create \
-            --tag ghcr.io/marv2on/lampac-talks:latest \
-            ghcr.io/lampac-talks/lampac:latest
-          echo "Mirror done → ghcr.io/marv2on/lampac-talks:latest"
-
+      # Mirror lampac-nextgen (їхній образ публічний)
       - name: Check lampac-nextgen Docker image
         id: nextgen_check
         run: |
