@@ -87,7 +87,6 @@ jobs:
             gh release create "$TAG" /tmp/talks-publish.zip \
               --title "Lampac talks $VERSION" \
               --notes "Auto-synced from lampac-talks/lampac release $VERSION"
-            echo "Release $TAG created"
             echo "new_release=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -102,7 +101,6 @@ jobs:
           VERSION=$(echo "$LATEST" | grep '"tag_name"' | cut -d'"' -f4)
           TAG="nextgen-${VERSION}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           if gh release view "$TAG" > /dev/null 2>&1; then
             echo "Release $TAG already exists, skipping."
             echo "new_release=false" >> "$GITHUB_OUTPUT"
@@ -110,50 +108,59 @@ jobs:
           fi
           ASSET_URLS=$(echo "$LATEST" | grep 'browser_download_url' | cut -d'"' -f4)
           FILES=""
-          i=0
           while IFS= read -r url; do
             [ -z "$url" ] && continue
             origname=$(basename "$url")
             curl -L "$url" -o "/tmp/${origname}"
             FILES="$FILES /tmp/${origname}"
-            i=$((i+1))
           done <<< "$ASSET_URLS"
           if [ -z "$FILES" ]; then
-            echo "No assets found, skipping."
             echo "new_release=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           gh release create "$TAG" $FILES \
             --title "Lampac NextGen $VERSION" \
             --notes "Auto-synced from lampac-nextgen/lampac release $VERSION"
-          echo "Release $TAG created"
           echo "new_release=true" >> "$GITHUB_OUTPUT"
 
       # ── Docker ───────────────────────────────────────────────────────────
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Login to GitHub Container Registry
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      # Build з Dockerfile папки Lampac/ (lampac-talks)
-      - name: Build and push lampac-talks Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./Lampac
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ghcr.io/marv2on/lampac-talks:latest
-            ghcr.io/marv2on/lampac-talks:${{ steps.talks_release.outputs.version }}
-          cache-from: type=gha,scope=lampac-talks
-          cache-to: type=gha,mode=max,scope=lampac-talks
+      # Mirror lampac-talks — образ публічний, теги amd64/arm64 окремо
+      # Об'єднуємо їх в один multi-platform маніфест під тегом :latest
+      - name: Check lampac-talks Docker image
+        id: talks_check
+        run: |
+          set -euo pipefail
+          # Беремо digest amd64 образу як індикатор оновлення
+          UPSTREAM=$(docker buildx imagetools inspect \
+            "ghcr.io/lampac-talks/lampac:${{ steps.talks_release.outputs.version }}-amd64-finality" \
+            --format '{{json .Manifest.Digest}}' 2>/dev/null | tr -d '"' || echo "")
+          OUR=$(docker buildx imagetools inspect ghcr.io/marv2on/lampac-talks:latest \
+            --format '{{json .Manifest.Digest}}' 2>/dev/null | tr -d '"' || echo "")
+          echo "upstream: $UPSTREAM"
+          echo "ours:     $OUR"
+          if [ -n "$UPSTREAM" ] && [ "$UPSTREAM" != "$OUR" ]; then
+            echo "needs_mirror=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_mirror=false" >> "$GITHUB_OUTPUT"
+          fi
 
-      # Mirror lampac-nextgen (їхній образ публічний)
+      - name: Mirror lampac-talks Docker image (merge amd64+arm64)
+        if: steps.talks_check.outputs.needs_mirror == 'true'
+        run: |
+          VERSION="${{ steps.talks_release.outputs.version }}"
+          # Об'єднуємо окремі архітектурні образи в один multi-platform маніфест
+          docker buildx imagetools create \
+            --tag ghcr.io/marv2on/lampac-talks:latest \
+            --tag ghcr.io/marv2on/lampac-talks:${VERSION} \
+            "ghcr.io/lampac-talks/lampac:${VERSION}-amd64-finality" \
+            "ghcr.io/lampac-talks/lampac:${VERSION}-arm64-finality"
+          echo "Mirror done → ghcr.io/marv2on/lampac-talks:latest"
+
+      # Mirror lampac-nextgen
       - name: Check lampac-nextgen Docker image
         id: nextgen_check
         run: |
