@@ -5,6 +5,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  packages: write
 jobs:
   update-embedded-repos:
     runs-on: ubuntu-latest
@@ -19,7 +20,6 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
           # sync_repo <local-dir> <repo-url> [branch] [subdir-in-repo]
           sync_repo() {
             local dir="$1"
@@ -45,7 +45,6 @@ jobs:
             fi
             rm -rf "$tmp"
           }
-
           sync_repo "Lampac"            "https://github.com/lampac-talks/lampac"
           sync_repo "lampa-source"      "https://github.com/yumata/lampa-source"
           sync_repo "lampac-ukraine"    "https://github.com/lampame/lampac-ukraine"
@@ -55,8 +54,7 @@ jobs:
           sync_repo "siaivo-custom"     "https://github.com/Siaivo/siaivo.github.io"  "rework" "src/custom"
           sync_repo "siaivo-main"       "https://github.com/Siaivo/siaivo.github.io"  "main"
           sync_repo "torrserver-tgbot"  "https://github.com/YouROK/TorrServer"         "master" "server/tgbot"
-          sync_repo "lampac-nextgen"    "https://github.com/lampac-nextgen/lampac"         
-
+          sync_repo "lampac-nextgen"    "https://github.com/lampac-nextgen/lampac"
           if [ -f .gitmodules ]; then
             git rm -f .gitmodules || true
           fi
@@ -88,3 +86,46 @@ jobs:
             --title "Lampac $VERSION" \
             --notes "Auto-synced from lampac-talks/lampac release $VERSION"
           echo "Release $VERSION created with publish.zip"
+
+      - name: Check lampac-nextgen Docker image version
+        id: nextgen_check
+        run: |
+          set -euo pipefail
+
+          UPSTREAM_DIGEST=$(docker buildx imagetools inspect ghcr.io/lampac-nextgen/lampac:latest \
+            --format '{{json .Manifest.Digest}}' 2>/dev/null | tr -d '"' || echo "")
+
+          if [ -z "$UPSTREAM_DIGEST" ]; then
+            echo "Could not get upstream digest, skipping mirror"
+            echo "needs_mirror=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Upstream digest: $UPSTREAM_DIGEST"
+          echo "upstream_digest=$UPSTREAM_DIGEST" >> "$GITHUB_OUTPUT"
+
+          OUR_DIGEST=$(docker buildx imagetools inspect ghcr.io/marv2on/lampac-nextgen:latest \
+            --format '{{json .Manifest.Digest}}' 2>/dev/null | tr -d '"' || echo "")
+
+          echo "Our digest: $OUR_DIGEST"
+
+          if [ "$UPSTREAM_DIGEST" = "$OUR_DIGEST" ]; then
+            echo "Image already up to date, skipping"
+            echo "needs_mirror=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New image detected, will mirror"
+            echo "needs_mirror=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mirror lampac-nextgen Docker image
+        if: steps.nextgen_check.outputs.needs_mirror == 'true'
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+          # imagetools create — копіює manifest без перезбірки, зберігає всі платформи (amd64 + arm64)
+          docker buildx imagetools create \
+            --tag ghcr.io/marv2on/lampac-nextgen:latest \
+            ghcr.io/lampac-nextgen/lampac:latest
+
+          echo "Mirror complete → ghcr.io/marv2on/lampac-nextgen:latest"
