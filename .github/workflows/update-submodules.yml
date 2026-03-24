@@ -66,6 +66,66 @@ jobs:
           git commit -m "chore: sync embedded repositories"
           git push origin main
 
+      # ── Release: lampac-talks → prefix "talks-" ──────────────────────────
+      - name: Sync lampac-talks release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          LATEST=$(curl -sf https://api.github.com/repos/lampac-talks/lampac/releases/latest)
+          VERSION=$(echo "$LATEST" | grep '"tag_name"' | cut -d'"' -f4)
+          ZIP_URL=$(echo "$LATEST" | grep 'browser_download_url.*publish\.zip' | cut -d'"' -f4)
+          TAG="talks-${VERSION}"
+          echo "talks latest: $VERSION → release tag: $TAG"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG already exists, skipping."
+          else
+            curl -L "$ZIP_URL" -o /tmp/talks-publish.zip
+            echo "Downloaded: $(du -sh /tmp/talks-publish.zip | cut -f1)"
+            gh release create "$TAG" /tmp/talks-publish.zip \
+              --title "Lampac talks $VERSION" \
+              --notes "Auto-synced from lampac-talks/lampac release $VERSION"
+            echo "Release $TAG created"
+          fi
+
+      # ── Release: lampac-nextgen → prefix "nextgen-" ──────────────────────
+      - name: Sync lampac-nextgen release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          LATEST=$(curl -sf https://api.github.com/repos/lampac-nextgen/lampac/releases/latest)
+          VERSION=$(echo "$LATEST" | grep '"tag_name"' | cut -d'"' -f4)
+          TAG="nextgen-${VERSION}"
+          echo "nextgen latest: $VERSION → release tag: $TAG"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG already exists, skipping."
+            exit 0
+          fi
+          # Качаємо всі assets з релізу
+          ASSET_URLS=$(echo "$LATEST" | grep 'browser_download_url' | cut -d'"' -f4)
+          FILES=""
+          i=0
+          while IFS= read -r url; do
+            [ -z "$url" ] && continue
+            fname="/tmp/nextgen-asset-${i}"
+            curl -L "$url" -o "$fname"
+            # Зберігаємо оригінальне ім'я файлу
+            origname=$(basename "$url")
+            mv "$fname" "/tmp/${origname}"
+            FILES="$FILES /tmp/${origname}"
+            i=$((i+1))
+          done <<< "$ASSET_URLS"
+          if [ -z "$FILES" ]; then
+            echo "No assets found for nextgen release $VERSION, skipping."
+            exit 0
+          fi
+          gh release create "$TAG" $FILES \
+            --title "Lampac NextGen $VERSION" \
+            --notes "Auto-synced from lampac-nextgen/lampac release $VERSION"
+          echo "Release $TAG created"
+
+      # ── Docker mirror ────────────────────────────────────────────────────
       - name: Login to GitHub Container Registry
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
