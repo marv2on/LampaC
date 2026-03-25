@@ -32,7 +32,6 @@ namespace Transcoding
             TranscodingService.Instance.Configure(conf);
         }
 
-
         void updateConf()
         {
             conf = ModuleInvoke.Init("transcoding", new ModuleConf()
@@ -48,17 +47,10 @@ namespace Transcoding
             });
         }
 
-
         public void Dispose()
         {
-            try
-            {
-                TranscodingService.Instance.StopAll();
-            }
-            catch (System.Exception ex)
-            {
-                Serilog.Log.Error(ex, "{Class} {CatchId}", "ModInit", "id_ley70nc7");
-            }
+            EventListener.UpdateInitFile -= updateConf;
+            TranscodingService.Instance.StopAll();
         }
     }
 }

@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Playwright;
 using Shared.Services;
-using Shared.Models;
 using Shared.Models.SQL;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
@@ -78,7 +77,7 @@ namespace Shared.PlaywrightCore
                 Console.WriteLine("Playwright: Initialization");
                 return true;
             }
-            catch (Exception ex)
+            catch (Exception ex) 
             {
                 Serilog.Log.Error(ex, "CatchId={CatchId}", "id_422c14f9");
                 Console.WriteLine($"Playwright: {ex.Message}");

@@ -28,12 +28,6 @@ namespace Online
         public void Configure(ConfigureModel app)
         {
             app.services.AddDbContextFactory<ExternalidsContext>(ExternalidsContext.ConfiguringDbBuilder);
-
-            KinoukrInvoke.KinoukrDb = JsonConvert.DeserializeObject<ConcurrentDictionary<string, Model>>(File.ReadAllText("data/kinoukr.json"));
-            //Kodik.database = JsonHelper.ListReader<Models.Kodik.Result>("data/kodik.json", 100_000);
-            Lumex.database = JsonHelper.ListReader<Models.Lumex.DatumDB>("data/lumex.json", 130_000).Result;
-            VDBmovies.database = JsonHelper.ListReader<Models.VDBmovies.MovieDB>("data/cdnmovies.json", 130_000).Result;
-            VeoVeo.database = JsonHelper.ListReader<Models.VeoVeo.Movie>("data/veoveo.json", 130_000).Result;
         }
 
         public void Loaded(InitspaceModel baseconf)
@@ -42,6 +36,12 @@ namespace Online
 
             updateConf();
             EventListener.UpdateInitFile += updateConf;
+
+            KinoukrInvoke.KinoukrDb = JsonConvert.DeserializeObject<ConcurrentDictionary<string, Model>>(File.ReadAllText("data/kinoukr.json"));
+            VeoVeo.database = JsonHelper.ListReader<Models.VeoVeo.Movie>("data/veoveo.json", 130_000).Result;
+            //Kodik.database = JsonHelper.ListReader<Models.Kodik.Result>("data/kodik.json", 100_000);
+            //Lumex.database = JsonHelper.ListReader<Models.Lumex.DatumDB>("data/lumex.json", 130_000).Result;
+            //VDBmovies.database = JsonHelper.ListReader<Models.VDBmovies.MovieDB>("data/cdnmovies.json", 130_000).Result;
 
             ExternalidsContext.Initialization(baseconf.app.ApplicationServices);
 
@@ -56,10 +56,8 @@ namespace Online
         {
             conf = ModuleInvoke.Init("online", new ModuleConf()
             {
-                findkp = "all",
-                checkOnlineSearch = true,
-                spider = true,
-                spiderName = "Spider",
+                findkp = "all", checkOnlineSearch = true,
+                spider = true, spiderName = "Spider",
                 component = "lampac",
                 name = CoreInit.conf.online.name,
                 description = "Плагин для просмотра онлайн сериалов и фильмов",
@@ -77,8 +75,7 @@ namespace Online
             PidTor = ModuleInvoke.Init("PidTor", new PidTorSettings()
             {
                 enable = true,
-                min_sid = 15,
-                emptyVoice = true,
+                min_sid = 15, emptyVoice = true,
                 redapi = "http://ns3bg91xvuqfvq9h.cfhttp.top"
             });
 

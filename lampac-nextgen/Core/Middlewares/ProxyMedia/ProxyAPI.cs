@@ -7,7 +7,6 @@ using Shared.Services.Utilities;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -29,43 +28,19 @@ namespace Core.Middlewares
             ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true
         };
 
+        static readonly ConcurrentDictionary<string, Dictionary<string, string[]>> cacheDefaultRequestHeaders = new();
         static readonly Regex rexM3u = new Regex("(https?://[^\n\r\"\\# ]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         static readonly Regex rexUri = new Regex("(URI=\")([^\"]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-        static FileSystemWatcher fileWatcher;
+        static CacheFileWatcher fileWatcher;
 
-        static readonly ConcurrentDictionary<string, long> cacheFiles = new();
-        static readonly ConcurrentDictionary<string, Dictionary<string, string[]>> cacheDefaultRequestHeaders = new();
-
-        public static int Stat_ContCacheFiles => cacheFiles.IsEmpty ? 0 : cacheFiles.Count;
+        public static int Stat_ContCacheFiles 
+            => fileWatcher.FilesCount;
 
         public static void Initialization()
         {
-            if (fileWatcher != null)
-                return;
-
-            string path = Path.Combine("cache", "hls");
-            Directory.CreateDirectory(path);
-
-            foreach (var file in new DirectoryInfo(path).EnumerateFiles("*", new EnumerationOptions
-            {
-                RecurseSubdirectories = false, // Не заходить в подкаталоги. Перечисляются только файлы в cache/hls, без вложенных папок.
-                IgnoreInaccessible = true,     // Пропускает файлы/папки, к которым нет доступа, без выброса исключений
-                AttributesToSkip = FileAttributes.ReparsePoint // Пропускает reparse points: symlink, junction/mount points
-            }))
-            {
-                cacheFiles.TryAdd(file.Name, file.Length);
-            }
-
-            fileWatcher = new FileSystemWatcher
-            {
-                Path = path,
-                NotifyFilter = NotifyFilters.FileName,
-                EnableRaisingEvents = true
-            };
-
-            fileWatcher.Deleted += (s, e) => { cacheFiles.TryRemove(e.Name, out _); };
-
+            CacheFileWatcher.Configure("hls", CoreInit.conf.serverproxy.cache_hls);
+            fileWatcher = new CacheFileWatcher("hls");
             EventListener.UpdateInitFile += cacheDefaultRequestHeaders.Clear;
         }
 
@@ -85,7 +60,7 @@ namespace Core.Middlewares
             var requestInfo = httpContext.Features.Get<RequestModel>();
             bool Isdash = httpContext.Request.Path.Value.StartsWith("/proxy-dash/", StringComparison.OrdinalIgnoreCase);
 
-            string servPath = Isdash
+            string servPath = Isdash 
                 ? httpContext.Request.Path.Value.Replace("/proxy-dash/", "", StringComparison.OrdinalIgnoreCase)
                 : httpContext.Request.Path.Value.Replace("/proxy/", "", StringComparison.OrdinalIgnoreCase);
 
@@ -134,7 +109,7 @@ namespace Core.Middlewares
             {
                 string md5key = CrypTo.md5(cacheStream.uriKey);
 
-                if (cacheFiles.TryGetValue(md5key, out long _cacheContentLength))
+                if (fileWatcher.TryGetValue(md5key, out var _fileCache))
                 {
                     using (var ctsHttp = CancellationTokenSource.CreateLinkedTokenSource(httpContext.RequestAborted))
                     {
@@ -147,8 +122,8 @@ namespace Core.Middlewares
                         httpContext.Response.Headers["accept-ranges"] = "bytes";
                         httpContext.Response.ContentType = cacheStream.contentType ?? "application/octet-stream";
 
-                        long cacheLength = _cacheContentLength;
-                        string cachePath = $"cache/hls/{md5key}";
+                        long cacheLength = _fileCache.Length;
+                        string cachePath = _fileCache.FullPath;
 
                         if (RangeHeaderValue.TryParse(httpContext.Request.Headers["Range"], out var range))
                         {

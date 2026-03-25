@@ -194,7 +194,6 @@ namespace TorrServer
         }
         #endregion
 
-
         void updateConf()
         {
             conf = ModuleInvoke.Init("TorrServer", new ModuleConf()
@@ -209,7 +208,6 @@ namespace TorrServer
             });
         }
 
-
         public void Dispose()
         {
             try
@@ -221,6 +219,8 @@ namespace TorrServer
             {
                 Log.Error(ex, "CatchId={CatchId}", "id_g06k67q3");
             }
+
+            EventListener.UpdateInitFile -= updateConf;
         }
     }
 }

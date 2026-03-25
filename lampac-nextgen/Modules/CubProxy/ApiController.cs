@@ -9,7 +9,6 @@ using Shared.Services.Hybrid;
 using Shared.Services.Pools;
 using Shared.Services.Utilities;
 using System;
-using System.Collections.Concurrent;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -24,8 +23,6 @@ namespace CubProxy.Controllers
 {
     public class ApiController : BaseController
     {
-        public static readonly ConcurrentDictionary<string, int> cacheFiles = new();
-
         [HttpGet]
         [AllowAnonymous]
         [Route("cubproxy.js")]
@@ -153,17 +150,17 @@ namespace CubProxy.Controllers
                 {
                     #region bypass or media cache
                     string md5key = CrypTo.md5($"{domain}:{uri}");
-                    string outFile = Path.Combine("cache", "cub", md5key);
+                    string outFile = ModInit.fileWatcher.OutFile(md5key);
 
-                    if (cacheFiles.TryGetValue(md5key, out int _contentLength))
+                    if (ModInit.fileWatcher.TryGetValue(md5key, out var _fileCache))
                     {
                         HttpContext.Response.Headers["X-Cache-Status"] = "HIT";
                         HttpContext.Response.ContentType = getContentType(uri);
 
-                        if (_contentLength > 0)
-                            HttpContext.Response.ContentLength = _contentLength;
+                        if (_fileCache.Length > 0)
+                            HttpContext.Response.ContentLength = _fileCache.Length;
 
-                        await HttpContext.Response.SendFileAsync(outFile, ctsHttp.Token).ConfigureAwait(false);
+                        await HttpContext.Response.SendFileAsync(_fileCache.FullPath, ctsHttp.Token).ConfigureAwait(false);
                         return;
                     }
 
@@ -207,12 +204,14 @@ namespace CubProxy.Controllers
                                 if (!_acquired)
                                     return;
 
-                                using (var nbuf = new BufferPool())
+                                using(var nbuf = new BufferPool())
                                 {
                                     try
                                     {
                                         int cacheLength = 0;
                                         var memBuf = nbuf.Memory;
+
+                                        ModInit.fileWatcher.EnsureDirectory(md5key);
 
                                         await using (var cacheStream = new FileStream(outFile, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: PoolInvk.bufferSize, options: FileOptions.Asynchronous))
                                         {
@@ -236,7 +235,7 @@ namespace CubProxy.Controllers
                                         {
                                             if (response.Content.Headers.ContentLength.Value == cacheLength)
                                             {
-                                                cacheFiles[md5key] = cacheLength;
+                                                ModInit.fileWatcher.Add(md5key, cacheLength);
                                             }
                                             else
                                             {
@@ -245,7 +244,7 @@ namespace CubProxy.Controllers
                                         }
                                         else
                                         {
-                                            cacheFiles[md5key] = cacheLength;
+                                            ModInit.fileWatcher.Add(md5key, cacheLength);
                                         }
                                     }
                                     catch
@@ -363,8 +362,6 @@ namespace CubProxy.Controllers
                 }
             }
         }
-
-
 
 
         #region getContentType

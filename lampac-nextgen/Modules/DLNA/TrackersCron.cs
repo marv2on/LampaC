@@ -15,9 +15,14 @@ namespace DLNA.CRON
     {
         static readonly Serilog.ILogger Log = Serilog.Log.ForContext("SourceContext", nameof(TrackersCron));
 
-        public static void Run()
+        public static void Start()
         {
             _cronTimer = new Timer(cron, null, TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(ModInit.conf.intervalUpdateTrackers));
+        }
+
+        public static void Stop()
+        {
+            _cronTimer.Dispose();
         }
 
         static Timer _cronTimer;

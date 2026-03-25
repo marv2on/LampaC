@@ -4,11 +4,7 @@ using Shared.Models.Events;
 using Shared.Models.Module;
 using Shared.Models.Module.Interfaces;
 using Shared.Services;
-using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.IO;
-using System.Threading.Tasks;
 
 namespace TmdbProxy
 {
@@ -16,8 +12,7 @@ namespace TmdbProxy
     {
         public static string modpath;
         public static ModuleConf conf;
-        public static readonly ConcurrentDictionary<string, int> cacheFiles = new();
-        static FileSystemWatcher fileWatcher;
+        public static CacheFileWatcher fileWatcher;
 
         public void Loaded(InitspaceModel baseconf)
         {
@@ -29,44 +24,9 @@ namespace TmdbProxy
             foreach (var m in conf.limit_map)
                 CoreInit.conf.WAF.limit_map.Insert(0, m);
 
-            string path = Path.Combine("cache", "tmdb");
-            Directory.CreateDirectory(path);
-
-            Parallel.ForEach(Directory.GetDirectories(path), new ParallelOptions
-            {
-                MaxDegreeOfParallelism = Environment.ProcessorCount
-            },
-            dir =>
-            {
-                foreach (var file in new DirectoryInfo(dir).EnumerateFiles("*", new EnumerationOptions
-                {
-                    RecurseSubdirectories = false, // Не заходить в подкаталоги
-                    IgnoreInaccessible = true,     // Пропускает файлы/папки, к которым нет доступа, без выброса исключений
-                    AttributesToSkip = FileAttributes.ReparsePoint // Пропускает reparse points: symlink, junction/mount points
-                }))
-                {
-                    cacheFiles.TryAdd(file.Name, (int)file.Length);
-                }
-            });
-
-            CoreInit.FileCacheCron.Add((path, conf.cache_img));
-
-            fileWatcher = new FileSystemWatcher
-            {
-                Path = path,
-                NotifyFilter = NotifyFilters.FileName,
-                EnableRaisingEvents = true
-            };
-
-            fileWatcher.Deleted += FileWatcher_Deleted;
+            CacheFileWatcher.Configure("tmdb", conf.cache_img);
+            fileWatcher = new CacheFileWatcher("tmdb");
         }
-
-
-        void FileWatcher_Deleted(object sender, FileSystemEventArgs e)
-        {
-            cacheFiles.TryRemove(Path.GetFileName(e.Name), out _);
-        }
-
 
         void updateConf()
         {
@@ -83,10 +43,9 @@ namespace TmdbProxy
             });
         }
 
-
         public void Dispose()
         {
-            fileWatcher.Deleted -= FileWatcher_Deleted;
+            EventListener.UpdateInitFile -= updateConf;
         }
     }
 }

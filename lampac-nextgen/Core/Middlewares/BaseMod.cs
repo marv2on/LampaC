@@ -24,12 +24,6 @@ namespace Core.Middlewares
             if (CoreInit.conf.openstat.enable)
                 RequestInfoStats.Increment("base");
 
-            if (context.Request.Path.Value.StartsWith("/nws", StringComparison.Ordinal) && !context.Request.Query.ContainsKey("ver"))
-            {
-                context.Response.StatusCode = 400;
-                return Task.CompletedTask;
-            }
-
             if (CoreInit.conf.BaseModule.BlockedBots && IsBlockedUserAgent(context.Request.Headers.UserAgent))
             {
                 if (CoreInit.conf.openstat.enable)
@@ -51,7 +45,7 @@ namespace Core.Middlewares
 
             if (!IsValidPath(context.Request.Path.Value))
             {
-                context.Response.StatusCode = 400;
+                context.Response.StatusCode = 400; 
                 return Task.CompletedTask;
             }
 

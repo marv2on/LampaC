@@ -9,7 +9,6 @@ using Shared.Services.Hybrid;
 using Shared.Services.Pools;
 using Shared.Services.Utilities;
 using System;
-using System.Collections.Concurrent;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -26,7 +25,6 @@ namespace TmdbProxy.Controllers
     public class ApiController : BaseController
     {
         #region static
-        static readonly ConcurrentDictionary<string, byte> cacheDirectories = new();
         static readonly HttpClient http2ApiClient = FriendlyHttp.CreateHttp2Client();
         static readonly HttpClient http2ImgClient = FriendlyHttp.CreateHttp2Client();
         static readonly Serilog.ILogger Log = Serilog.Log.ForContext<ApiController>();
@@ -174,7 +172,7 @@ namespace TmdbProxy.Controllers
                 string uri = "https://image.tmdb.org" + path + query;
 
                 string md5key = CrypTo.md5($"{path}:{query}");
-                string outFile = Path.Combine("cache", "tmdb", md5key[0].ToString(), md5key);
+                string outFile = ModInit.fileWatcher.OutFile(md5key);
 
                 httpContext.Response.Headers[HeaderNames.CacheControl] = "public,max-age=86400,immutable";
                 httpContext.Response.ContentType = path.Contains(".png", StringComparison.OrdinalIgnoreCase)
@@ -182,21 +180,21 @@ namespace TmdbProxy.Controllers
                     : path.Contains(".svg", StringComparison.OrdinalIgnoreCase) ? "image/svg+xml" : "image/jpeg";
 
                 #region cacheFiles
-                if (ModInit.cacheFiles.TryGetValue(md5key, out int _contentLength))
+                if (ModInit.fileWatcher.TryGetValue(md5key, out var _fileCache))
                 {
                     httpContext.Response.Headers["X-Cache-Status"] = "HIT";
 
-                    if (ModInit.conf.responseContentLength && _contentLength > 0)
-                        httpContext.Response.ContentLength = _contentLength;
+                    if (ModInit.conf.responseContentLength && _fileCache.Length > 0)
+                        httpContext.Response.ContentLength = _fileCache.Length;
 
                     try
                     {
-                        await httpContext.Response.SendFileAsync(outFile, ctsHttp.Token).ConfigureAwait(false);
+                        await httpContext.Response.SendFileAsync(_fileCache.FullPath, ctsHttp.Token).ConfigureAwait(false);
                         return;
                     }
                     catch (System.Exception ex)
                     {
-                        ModInit.cacheFiles.TryRemove(md5key, out _);
+                        ModInit.fileWatcher.Remove(md5key);
                         Log.Error(ex, "CatchId={CatchId}", "id_aspi1mjf");
                     }
                 }
@@ -227,15 +225,15 @@ namespace TmdbProxy.Controllers
                         return;
 
                     #region cacheFiles
-                    if (ModInit.cacheFiles.TryGetValue(md5key, out _contentLength))
+                    if (ModInit.fileWatcher.TryGetValue(md5key, out _fileCache))
                     {
                         httpContext.Response.Headers["X-Cache-Status"] = "HIT";
 
-                        if (ModInit.conf.responseContentLength && _contentLength > 0)
-                            httpContext.Response.ContentLength = _contentLength;
+                        if (ModInit.conf.responseContentLength && _fileCache.Length > 0)
+                            httpContext.Response.ContentLength = _fileCache.Length;
 
                         semaphore?.Release();
-                        await httpContext.Response.SendFileAsync(outFile, ctsHttp.Token).ConfigureAwait(false);
+                        await httpContext.Response.SendFileAsync(_fileCache.FullPath, ctsHttp.Token).ConfigureAwait(false);
                         return;
                     }
                     #endregion
@@ -283,7 +281,7 @@ namespace TmdbProxy.Controllers
                                         int cacheLength = 0;
                                         bool isFullyRead = false;
 
-                                        EnsureCacheDirectory(outFile);
+                                        ModInit.fileWatcher.EnsureDirectory(md5key);
 
                                         await using (var cacheStream = new FileStream(outFile, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: PoolInvk.bufferSize, options: FileOptions.Asynchronous))
                                         {
@@ -312,7 +310,7 @@ namespace TmdbProxy.Controllers
                                             {
                                                 if (response.Content.Headers.ContentLength.Value == cacheLength)
                                                 {
-                                                    ModInit.cacheFiles[md5key] = cacheLength;
+                                                    ModInit.fileWatcher.Add(md5key, cacheLength);
                                                 }
                                                 else
                                                 {
@@ -321,7 +319,7 @@ namespace TmdbProxy.Controllers
                                             }
                                             else
                                             {
-                                                ModInit.cacheFiles[md5key] = cacheLength;
+                                                ModInit.fileWatcher.Add(md5key, cacheLength);
                                             }
                                         }
                                     }
@@ -358,22 +356,6 @@ namespace TmdbProxy.Controllers
                     semaphore?.Release();
                 }
             }
-        }
-        #endregion
-
-
-        #region Utilities
-        static void EnsureCacheDirectory(string outFile)
-        {
-            string cacheDir = Path.GetDirectoryName(outFile);
-            if (string.IsNullOrEmpty(cacheDir))
-                return;
-
-            cacheDirectories.GetOrAdd(cacheDir, key =>
-            {
-                Directory.CreateDirectory(key);
-                return 0;
-            });
         }
         #endregion
     }

@@ -1,21 +1,18 @@
-﻿using CubProxy.Controllers;
-using Shared;
+﻿using Shared;
 using Shared.Services;
 using Shared.Models.AppConf;
 using Shared.Models.Events;
 using Shared.Models.Module;
 using Shared.Models.Module.Interfaces;
 using System.Collections.Generic;
-using System.IO;
 
 namespace CubProxy
 {
     public class ModInit : IModuleLoaded
     {
         public static string modpath;
-        static FileSystemWatcher fileWatcher;
-
         public static ModuleConf conf;
+        public static CacheFileWatcher fileWatcher;
 
         public void Loaded(InitspaceModel baseconf)
         {
@@ -27,37 +24,9 @@ namespace CubProxy
             foreach (var m in conf.limit_map)
                 CoreInit.conf.WAF.limit_map.Insert(0, m);
 
-            string path = Path.Combine("cache", "cub");
-            Directory.CreateDirectory(path);
-
-            foreach (var file in new DirectoryInfo(path).EnumerateFiles("*", new EnumerationOptions
-            {
-                RecurseSubdirectories = false, // Не заходить в подкаталоги. Перечисляются только файлы в cache/hls, без вложенных папок.
-                IgnoreInaccessible = true,     // Пропускает файлы/папки, к которым нет доступа, без выброса исключений
-                AttributesToSkip = FileAttributes.ReparsePoint // Пропускает reparse points: symlink, junction/mount points
-            }))
-            {
-                ApiController.cacheFiles.TryAdd(file.Name, (int)file.Length);
-            }
-
-            CoreInit.FileCacheCron.Add((path, conf.cache_img));
-
-            fileWatcher = new FileSystemWatcher
-            {
-                Path = path,
-                NotifyFilter = NotifyFilters.FileName,
-                EnableRaisingEvents = true
-            };
-
-            fileWatcher.Deleted += FileWatcher_Deleted;
+            CacheFileWatcher.Configure("cub", conf.cache_img);
+            fileWatcher = new CacheFileWatcher("cub");
         }
-
-
-        void FileWatcher_Deleted(object sender, FileSystemEventArgs e)
-        {
-            ApiController.cacheFiles.TryRemove(e.Name, out _);
-        }
-
 
         void updateConf()
         {
@@ -77,10 +46,9 @@ namespace CubProxy
             });
         }
 
-
         public void Dispose()
         {
-            fileWatcher.Deleted -= FileWatcher_Deleted;
+            EventListener.UpdateInitFile -= updateConf;
         }
     }
 }

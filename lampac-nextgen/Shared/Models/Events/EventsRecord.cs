@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Memory;
 using Newtonsoft.Json.Linq;
 using Shared.Services;
-using Shared.Models.Base;
 using Shared.Models.Proxy;
 using Shared.Models.Templates;
 using System.Net;
@@ -34,11 +33,13 @@ namespace Shared.Models.Events
 
     public record EventStreamQualityFirts(IReadOnlyList<StreamQualityDto> data);
 
-    public record EventHttpHandler(string url, HttpClientHandler handler, WebProxy proxy, CookieContainer cookieContainer, IMemoryCache memoryCache);
+    public record EventHttpHandler(string url, HttpClientHandler handler, WebProxy proxy, CookieContainer cookieContainer);
 
-    public record EventHttpHeaders(string url, HttpRequestMessage client, string cookie, string referer, List<HeadersModel> headers, bool useDefaultHeaders, IMemoryCache memoryCache);
+    public record EventHttpHeaders(string url, HttpRequestMessage client, string cookie, string referer, List<HeadersModel> headers, bool useDefaultHeaders);
 
-    public record EventHttpResponse(string url, HttpContent data, HttpClient client, string result, HttpResponseMessage response, IMemoryCache memoryCache);
+    public record EventHttpResponse(string url, HttpClient client, HttpContent data, HttpResponseMessage response, string result);
+
+    public record EventPlaywrightHttpResponse(string url, string method, int status, Dictionary<string, string> requestHeaders, Dictionary<string, string> responseHeaders, string result, string error);
 
     public record EventProxyApiCreateHttpRequest(string plugin, HttpRequest request, List<HeadersModel> headers, Uri uri, HttpRequestMessage requestMessage);
 

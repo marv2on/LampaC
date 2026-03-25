@@ -97,7 +97,7 @@ namespace JacRed.Engine
         #region Cron
         async public static Task Cron()
         {
-            while (true)
+            while (!ModInit.IsDispose)
             {
                 await Task.Delay(TimeSpan.FromMinutes(10));
 
@@ -111,7 +111,7 @@ namespace JacRed.Engine
                         .Select(i => i.Key)
                         .ToArray();
 
-                    foreach (string key in deleteKeys)
+                    foreach (string key in deleteKeys) 
                         openWriteTask.TryRemove(key, out _);
                 }
                 catch (System.Exception ex)
@@ -123,7 +123,7 @@ namespace JacRed.Engine
 
         async public static Task CronFast()
         {
-            while (true)
+            while (!ModInit.IsDispose)
             {
                 await Task.Delay(TimeSpan.FromSeconds(20));
 

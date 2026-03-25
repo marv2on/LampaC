@@ -27,7 +27,6 @@ namespace Tracks
             Directory.CreateDirectory("database/tracks");
         }
 
-
         void updateConf()
         {
             conf = ModuleInvoke.Init("Tracks", new ModuleConf()
@@ -40,7 +39,9 @@ namespace Tracks
             });
         }
 
-
-        public void Dispose() { }
+        public void Dispose()
+        {
+            EventListener.UpdateInitFile -= updateConf;
+        }
     }
 }

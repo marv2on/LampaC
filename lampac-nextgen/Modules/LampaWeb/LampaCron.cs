@@ -12,10 +12,15 @@ namespace LampaWeb
     {
         static string currentapp;
 
-        public static void Run()
+        public static void Start()
         {
             var init = ModInit.conf;
-            _cronTimer = new Timer(cron, null, TimeSpan.FromSeconds(20), TimeSpan.FromMinutes(Math.Max(init.intervalupdate, 5)));
+            _cronTimer = new Timer(cron, null, TimeSpan.Zero, TimeSpan.FromMinutes(Math.Max(init.intervalupdate, 5)));
+        }
+
+        public static void Stop()
+        {
+            _cronTimer.Dispose();
         }
 
         static Timer _cronTimer;

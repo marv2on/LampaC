@@ -27,54 +27,23 @@ namespace Core.Middlewares
     {
         #region static
         static readonly Serilog.ILogger Log = Serilog.Log.ForContext<ProxyImg>();
-
         static readonly Regex rexRsize = new Regex("/proxyimg:([0-9]+):([0-9]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-        static FileSystemWatcher fileWatcher;
-        static Timer errorDownloadsCleanupTimer;
-        static Timer decryptLinksCleanupTimer;
-
-        static readonly ConcurrentDictionary<string, int> cacheFiles = new();
-        static readonly ConcurrentDictionary<char, byte> cacheDirectories = new();
         static readonly ConcurrentDictionary<string, DateTime> errorDownloads = new();
         static readonly ConcurrentDictionary<string, ProxyLinkModel> decryptLinks = new();
 
-        public static int Stat_ContCacheFiles => cacheFiles.IsEmpty ? 0 : cacheFiles.Count;
+        static Timer errorDownloadsCleanupTimer;
+        static Timer decryptLinksCleanupTimer;
+
+        static CacheFileWatcher fileWatcher;
+
+        public static int Stat_ContCacheFiles
+            => fileWatcher.FilesCount;
 
         public static void Initialization()
         {
-            if (fileWatcher != null)
-                return;
-
-            string path = Path.Combine("cache", "img");
-            Directory.CreateDirectory(path);
-
-            Parallel.ForEach(Directory.GetDirectories(path), new ParallelOptions
-            {
-                MaxDegreeOfParallelism = Environment.ProcessorCount
-            },
-            dir =>
-            {
-                foreach (var file in new DirectoryInfo(dir).EnumerateFiles("*", new EnumerationOptions
-                {
-                    RecurseSubdirectories = false,
-                    IgnoreInaccessible = true,     // Пропускает файлы/папки, к которым нет доступа, без выброса исключений
-                    AttributesToSkip = FileAttributes.ReparsePoint // Пропускает reparse points: symlink, junction/mount points
-                }))
-                {
-                    cacheFiles.TryAdd(file.Name, (int)file.Length);
-                }
-            });
-
-            fileWatcher = new FileSystemWatcher
-            {
-                Path = path,
-                NotifyFilter = NotifyFilters.FileName,
-                IncludeSubdirectories = true,
-                EnableRaisingEvents = true
-            };
-
-            fileWatcher.Deleted += (s, e) => { cacheFiles.TryRemove(Path.GetFileName(e.Name), out _); };
+            CacheFileWatcher.Configure("img", CoreInit.conf.serverproxy.image.cache_time);
+            fileWatcher = new CacheFileWatcher("img");
 
             errorDownloadsCleanupTimer = new Timer(_ =>
             {
@@ -98,8 +67,7 @@ namespace Core.Middlewares
         async public Task InvokeAsync(HttpContext httpContext)
         {
             var init = CoreInit.conf.serverproxy.image;
-            if (!init.enable)
-            {
+            if (!init.enable) {
                 httpContext.Response.StatusCode = 404;
                 return;
             }
@@ -177,7 +145,7 @@ namespace Core.Middlewares
                                 md5key = CrypTo.md5(newKey);
                         }
 
-                        outFile = Path.Combine("cache", "img", md5key[0].ToString(), md5key);
+                        outFile = fileWatcher.OutFile(md5key);
                     }
 
                     string url_reserve = null;
@@ -196,22 +164,22 @@ namespace Core.Middlewares
                         contentType = href.Contains(".png", StringComparison.OrdinalIgnoreCase) ? "image/png" : "image/jpeg";
 
                     #region cacheFiles
-                    if (cacheimg && cacheFiles.TryGetValue(md5key, out int _contentLength))
+                    if (cacheimg && fileWatcher.TryGetValue(md5key, out var _fileCache))
                     {
                         httpContext.Response.Headers["X-Cache-Status"] = "HIT";
                         httpContext.Response.ContentType = contentType;
 
-                        if (CoreInit.conf.serverproxy.responseContentLength && _contentLength > 0)
-                            httpContext.Response.ContentLength = _contentLength;
+                        if (CoreInit.conf.serverproxy.responseContentLength && _fileCache.Length > 0)
+                            httpContext.Response.ContentLength = _fileCache.Length;
 
                         try
                         {
-                            await httpContext.Response.SendFileAsync(outFile, ctsHttp.Token).ConfigureAwait(false);
+                            await httpContext.Response.SendFileAsync(_fileCache.FullPath, ctsHttp.Token).ConfigureAwait(false);
                             return;
                         }
                         catch (System.Exception ex)
                         {
-                            cacheFiles.TryRemove(md5key, out _);
+                            fileWatcher.Remove(md5key);
                             Log.Error(ex, "CatchId={CatchId}", "id_7ong4hmg");
                         }
                     }
@@ -244,16 +212,16 @@ namespace Core.Middlewares
                             return;
 
                         #region cacheFiles
-                        if (cacheimg && cacheFiles.TryGetValue(md5key, out _contentLength))
+                        if (cacheimg && fileWatcher.TryGetValue(md5key, out _fileCache))
                         {
                             httpContext.Response.Headers["X-Cache-Status"] = "HIT";
                             httpContext.Response.ContentType = contentType;
 
-                            if (CoreInit.conf.serverproxy.responseContentLength && _contentLength > 0)
-                                httpContext.Response.ContentLength = _contentLength;
+                            if (CoreInit.conf.serverproxy.responseContentLength && _fileCache.Length > 0)
+                                httpContext.Response.ContentLength = _fileCache.Length;
 
                             semaphore?.Release();
-                            await httpContext.Response.SendFileAsync(outFile, ctsHttp.Token).ConfigureAwait(false);
+                            await httpContext.Response.SendFileAsync(_fileCache.FullPath, ctsHttp.Token).ConfigureAwait(false);
                             return;
                         }
                         #endregion
@@ -274,8 +242,8 @@ namespace Core.Middlewares
 
                         if (width == 0 && height == 0)
                         {
-                        #region bypass
-                        bypass_reset:
+                            #region bypass
+                            bypass_reset:
 
                             var client = FriendlyHttp.MessageClient("proxyimg", Http.Handler(href, proxy));
 
@@ -333,7 +301,7 @@ namespace Core.Middlewares
                                             {
                                                 int cacheLength = 0;
                                                 bool isFullyRead = false;
-                                                EnsureCacheDirectory(md5key[0]);
+                                                fileWatcher.EnsureDirectory(md5key);
 
                                                 await using (var cacheStream = new FileStream(outFile, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: PoolInvk.bufferSize, options: FileOptions.Asynchronous))
                                                 {
@@ -361,7 +329,7 @@ namespace Core.Middlewares
                                                     {
                                                         if (response.Content.Headers.ContentLength.Value == cacheLength)
                                                         {
-                                                            cacheFiles[md5key] = cacheLength;
+                                                            fileWatcher.Add(md5key, cacheLength);
                                                         }
                                                         else
                                                         {
@@ -370,14 +338,13 @@ namespace Core.Middlewares
                                                     }
                                                     else
                                                     {
-                                                        cacheFiles[md5key] = cacheLength;
+                                                        fileWatcher.Add(md5key, cacheLength);
                                                     }
                                                 }
                                             }
                                             catch
                                             {
-                                                cacheFiles.TryRemove(md5key, out _);
-                                                File.Delete(outFile);
+                                                fileWatcher.Remove(md5key);
                                             }
                                         }
                                         else
@@ -400,7 +367,7 @@ namespace Core.Middlewares
                             #region rsize
                             httpContext.Response.ContentType = contentType;
 
-                        rsize_reset:
+                            rsize_reset:
 
                             using (var inArray = PoolInvk.msm.GetStream())
                             {
@@ -448,7 +415,7 @@ namespace Core.Middlewares
                                                     outArray.Dispose();
 
                                                     using (var handle = File.OpenHandle(outFile))
-                                                        cacheFiles[md5key] = (int)RandomAccess.GetLength(handle);
+                                                        fileWatcher.Add(md5key, (int)RandomAccess.GetLength(handle));
 
                                                     semaphore?.Release();
                                                     await httpContext.Response.SendFileAsync(outFile, ctsHttp.Token).ConfigureAwait(false);
@@ -488,7 +455,7 @@ namespace Core.Middlewares
                                     finally
                                     {
                                         if (cacheimg)
-                                            await TrySaveCache(resultArray, outFile, md5key).ConfigureAwait(false);
+                                            await fileWatcher.TrySave(md5key, resultArray).ConfigureAwait(false);
                                     }
                                 }
                             }
@@ -566,41 +533,6 @@ namespace Core.Middlewares
             catch
             {
                 return default;
-            }
-        }
-        #endregion
-
-        #region TrySaveCache
-        async static Task TrySaveCache(RecyclableMemoryStream ms, string outFile, string md5key)
-        {
-            try
-            {
-                EnsureCacheDirectory(md5key[0]);
-
-                await using (var streamFile = new FileStream(outFile, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: PoolInvk.bufferSize, options: FileOptions.Asynchronous))
-                {
-                    using (var nbuf = new BufferPool())
-                    {
-                        int bytesRead;
-                        var memBuf = nbuf.Memory;
-
-                        ms.Position = 0;
-                        while ((bytesRead = ms.Read(memBuf.Span)) > 0)
-                            await streamFile.WriteAsync(memBuf.Slice(0, bytesRead)).ConfigureAwait(false);
-                    }
-                }
-
-                cacheFiles[md5key] = (int)ms.Length;
-            }
-            catch
-            {
-                cacheFiles.TryRemove(md5key, out _);
-
-                try
-                {
-                    File.Delete(outFile);
-                }
-                catch { }
             }
         }
         #endregion
@@ -708,9 +640,9 @@ namespace Core.Middlewares
 
                 return true;
             }
-            catch
-            {
-                return false;
+            catch 
+            { 
+                return false; 
             }
             finally
             {
@@ -773,15 +705,6 @@ namespace Core.Middlewares
         static void MarkDownloadError(string href)
         {
             errorDownloads[href] = DateTime.UtcNow.AddMinutes(1);
-        }
-
-        static void EnsureCacheDirectory(char key)
-        {
-            cacheDirectories.GetOrAdd(key, key =>
-            {
-                Directory.CreateDirectory(Path.Combine("cache", "img", key.ToString()));
-                return 0;
-            });
         }
         #endregion
     }

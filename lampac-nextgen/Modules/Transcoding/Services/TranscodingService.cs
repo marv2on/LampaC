@@ -460,17 +460,23 @@ namespace Transcoding.Services
 
         public void StopAll()
         {
-            var jobs = _jobs.Values.ToArray();
-            foreach (var job in jobs)
+            try
             {
-                try
+                foreach (var job in _jobs.Values.ToArray())
                 {
-                    _ = StopJobAsync(job, forced: true).ConfigureAwait(false);
+                    try
+                    {
+                        _ = StopJobAsync(job, forced: true).ConfigureAwait(false);
+                    }
+                    catch (System.Exception ex)
+                    {
+                        Log.Error(ex, "CatchId={CatchId}", "id_sp9w94ug");
+                    }
                 }
-                catch (System.Exception ex)
-                {
-                    Log.Error(ex, "CatchId={CatchId}", "id_sp9w94ug");
-                }
+            }
+            catch (System.Exception ex)
+            {
+                Serilog.Log.Error(ex, "{Class} {CatchId}", "ModInit", "id_ley70nc7");
             }
         }
 

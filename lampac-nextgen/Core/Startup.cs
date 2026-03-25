@@ -215,8 +215,7 @@ namespace Core
 
             IMvcBuilder mvcBuilder = services.AddControllersWithViews();
 
-            mvcBuilder.AddJsonOptions(options =>
-            {
+            mvcBuilder.AddJsonOptions(options => {
                 //options.JsonSerializerOptions.IgnoreNullValues = true;
                 options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault;
             });
@@ -665,34 +664,15 @@ namespace Core
 
                         try
                         {
-                            var parts = mvcBuilder.PartManager.ApplicationParts
-                                .OfType<AssemblyPart>()
-                                .Where(p => p.Assembly == mod.assembly)
-                                .ToList();
-
-                            #region update manifest.json
-                            string manifestPath = Path.Combine(path, "manifest.json");
-                            RootModule manifestMod = null;
-
-                            if (File.Exists(manifestPath))
-                            {
-                                try
-                                {
-                                    manifestMod = JsonConvert.DeserializeObject<RootModule>(File.ReadAllText(manifestPath));
-                                    mod.enable = manifestMod.enable;
-                                }
-                                catch (Exception manifestEx)
-                                {
-                                    Serilog.Log.Error(manifestEx, "CatchId={CatchId}", "id_00a4305e");
-                                    Console.WriteLine($"Failed to update manifest for {mod.name}: {manifestEx.Message}");
-                                }
-                            }
-                            #endregion
-
                             var build = CSharpEval.Compilation(mod);
                             if (build.assembly != null)
                             {
                                 DisposeModule(mod);
+
+                                var parts = mvcBuilder.PartManager.ApplicationParts
+                                    .OfType<AssemblyPart>()
+                                    .Where(p => p.Assembly == mod.assembly)
+                                    .ToList();
 
                                 foreach (var part in parts)
                                     mvcBuilder.PartManager.ApplicationParts.Remove(part);

@@ -122,7 +122,7 @@ namespace Shared.Services
             }
 
             if (EventListener.HttpHandler != null)
-                EventListener.HttpHandler.Invoke(new EventHttpHandler(url, handler, proxy, cookieContainer, Startup.memoryCache));
+                EventListener.HttpHandler.Invoke(new EventHttpHandler(url, handler, proxy, cookieContainer));
 
             return handler;
         }
@@ -196,7 +196,7 @@ namespace Shared.Services
                 }
 
                 if (EventListener.HttpRequestHeaders != null)
-                    EventListener.HttpRequestHeaders.Invoke(new EventHttpHeaders(url, client, cookie, referer, headers, useDefaultHeaders, Startup.memoryCache));
+                    EventListener.HttpRequestHeaders.Invoke(new EventHttpHeaders(url, client, cookie, referer, headers, useDefaultHeaders));
             }
         }
         #endregion
@@ -209,7 +209,7 @@ namespace Shared.Services
 
             var result = new Dictionary<string, T>(raw.Count, StringComparer.Ordinal);
 
-            foreach (var kv in raw)
+            foreach (var kv in raw) 
                 result[NormalizeHeaderName(kv.Key)] = kv.Value;
 
             return result;
@@ -320,8 +320,8 @@ namespace Shared.Services
                 DefaultRequestHeaders(url, req, null, null, headers);
 
                 using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(Math.Max(5, timeoutSeconds))))
-                using (HttpResponseMessage response = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false))
-                    return response;
+                    using (HttpResponseMessage response = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false))
+                        return response;
             }
             catch
             {
@@ -335,7 +335,7 @@ namespace Shared.Services
         async public static Task<T> Get<T>(string url, string cookie = null, string referer = null, long MaxResponseContentBufferSize = 0, int timeoutSeconds = 15, List<HeadersModel> headers = null, bool IgnoreDeserializeObject = false, WebProxy proxy = null, bool statusCodeOK = true, int httpversion = 1, CookieContainer cookieContainer = null, bool useDefaultHeaders = true, HttpContent body = null, HttpClient httpClient = null, bool textJson = false)
         {
             return (await BaseGetAsync<T>(
-                url, cookie, referer, MaxResponseContentBufferSize, timeoutSeconds, headers, IgnoreDeserializeObject, proxy, statusCodeOK, httpversion, cookieContainer, useDefaultHeaders, body, httpClient, textJson
+                url, cookie, referer, MaxResponseContentBufferSize, timeoutSeconds, headers, IgnoreDeserializeObject, proxy,statusCodeOK, httpversion, cookieContainer, useDefaultHeaders, body, httpClient, textJson
             ).ConfigureAwait(false)).content;
         }
         #endregion
@@ -388,7 +388,7 @@ namespace Shared.Services
                     }
                     catch (Exception ex)
                     {
-                        Serilog.Log.Error(ex, "CatchId={CatchId}", "id_1t8mrdlh");
+                        Serilog.Log.Error(ex, "CatchId={CatchId}, Url={Url}", "id_1t8mrdlh", url);
                     }
                 },
                     url, cookie, referer, MaxResponseContentBufferSize, timeoutSeconds, headers, IgnoreDeserializeObject, proxy, statusCodeOK, httpversion, cookieContainer, useDefaultHeaders, body, httpClient
@@ -427,10 +427,23 @@ namespace Shared.Services
                         using (HttpContent content = response.Content)
                         {
                             if (EventListener.HttpResponse != null)
-                                await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, null, client, "ReadAsStream", response, Startup.memoryCache));
+                            {
+                                if (statusCodeOK && response.StatusCode != HttpStatusCode.OK)
+                                {
+                                    await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, client, body, response, string.Empty)).ConfigureAwait(false);
+                                    return (false, response);
+                                }
 
-                            if (statusCodeOK && response.StatusCode != HttpStatusCode.OK)
-                                return (false, response);
+                                await content.LoadIntoBufferAsync().ConfigureAwait(false);
+
+                                string result = await content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
+                                await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, client, body, response, result)).ConfigureAwait(false);
+                            }
+                            else
+                            {
+                                if (statusCodeOK && response.StatusCode != HttpStatusCode.OK)
+                                    return (false, response);
+                            }
 
                             await using (var stream = await content.ReadAsStreamAsync(cts.Token).ConfigureAwait(false))
                             {
@@ -444,15 +457,15 @@ namespace Shared.Services
             catch (System.Exception ex)
             {
                 if (ex is not TaskCanceledException)
-                    Serilog.Log.Error(ex, "CatchId={CatchId}", "id_6cd10d26");
+                    Serilog.Log.Error(ex, "CatchId={CatchId}, Url={Url}", "id_6cd10d26", url);
 
                 if (EventListener.HttpResponse != null)
                 {
-                    await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, null, null, ex.ToString(), new HttpResponseMessage()
+                    await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, null, null, new HttpResponseMessage()
                     {
                         StatusCode = HttpStatusCode.InternalServerError,
                         RequestMessage = new HttpRequestMessage()
-                    }, Startup.memoryCache));
+                    }, ex.ToString())).ConfigureAwait(false);
                 }
 
                 return (false, new HttpResponseMessage()
@@ -612,11 +625,11 @@ namespace Shared.Services
                                 }
                             }
 
+                            if (EventListener.HttpResponse != null)
+                                await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, client, body, response, res)).ConfigureAwait(false);
+
                             if (string.IsNullOrWhiteSpace(res))
                                 return (null, response);
-
-                            if (EventListener.HttpResponse != null)
-                                await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, null, client, res, response, Startup.memoryCache));
 
                             return (res, response);
                         }
@@ -626,15 +639,15 @@ namespace Shared.Services
             catch (System.Exception ex)
             {
                 if (ex is not TaskCanceledException)
-                    Serilog.Log.Error(ex, "CatchId={CatchId}", "id_017bf8af");
+                    Serilog.Log.Error(ex, "CatchId={CatchId}, Url={Url}", "id_017bf8af", url);
 
                 if (EventListener.HttpResponse != null)
                 {
-                    await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, null, null, ex.ToString(), new HttpResponseMessage()
+                    await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, null, null, new HttpResponseMessage()
                     {
                         StatusCode = HttpStatusCode.InternalServerError,
                         RequestMessage = new HttpRequestMessage()
-                    }, Startup.memoryCache));
+                    }, ex.ToString())).ConfigureAwait(false);
                 }
 
                 return (null, new HttpResponseMessage()
@@ -655,7 +668,7 @@ namespace Shared.Services
         #region Post
         public static Task<string> Post(string url, string data, string cookie = null, int MaxResponseContentBufferSize = 0, int timeoutSeconds = 15, List<HeadersModel> headers = null, WebProxy proxy = null, int httpversion = 1, CookieContainer cookieContainer = null, bool useDefaultHeaders = true, bool removeContentType = false, Encoding encoding = default, bool statusCodeOK = true, HttpClient httpClient = null)
         {
-            return Post(url, new StringContent(data, Encoding.UTF8, "application/x-www-form-urlencoded"),
+            return Post(url, new StringContent(data, Encoding.UTF8, "application/x-www-form-urlencoded"), 
                 encoding, cookie, MaxResponseContentBufferSize, timeoutSeconds, headers, proxy, httpversion, cookieContainer, useDefaultHeaders, removeContentType, statusCodeOK, httpClient
             );
         }
@@ -712,11 +725,11 @@ namespace Shared.Services
                                 }
                             }
 
+                            if (EventListener.HttpResponse != null)
+                                await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, client, data, response, res)).ConfigureAwait(false);
+
                             if (string.IsNullOrWhiteSpace(res))
                                 return (null, response);
-
-                            if (EventListener.HttpResponse != null)
-                                await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, data, client, res, response, Startup.memoryCache));
 
                             return (res, response);
                         }
@@ -726,15 +739,15 @@ namespace Shared.Services
             catch (System.Exception ex)
             {
                 if (ex is not TaskCanceledException)
-                    Serilog.Log.Error(ex, "CatchId={CatchId}", "id_dd21e44c");
+                    Serilog.Log.Error(ex, "CatchId={CatchId}, Url={Url}", "id_dd21e44c", url);
 
                 if (EventListener.HttpResponse != null)
                 {
-                    await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, data, null, ex.ToString(), new HttpResponseMessage()
+                    await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, null, data, new HttpResponseMessage()
                     {
                         StatusCode = HttpStatusCode.InternalServerError,
                         RequestMessage = new HttpRequestMessage()
-                    }, Startup.memoryCache));
+                    }, ex.ToString())).ConfigureAwait(false);
                 }
 
                 return (null, new HttpResponseMessage()
@@ -809,7 +822,7 @@ namespace Shared.Services
                     }
                     catch (Exception ex)
                     {
-                        Serilog.Log.Error(ex, "CatchId={CatchId}", "id_gqpu49cz");
+                        Serilog.Log.Error(ex, "CatchId={CatchId}, Url={Url}", "id_gqpu49cz", url);
                     }
                 },
                     url, data, cookie, MaxResponseContentBufferSize, timeoutSeconds, headers, proxy, httpversion, cookieContainer, useDefaultHeaders, statusCodeOK, httpClient
@@ -848,10 +861,23 @@ namespace Shared.Services
                         using (HttpContent content = response.Content)
                         {
                             if (EventListener.HttpResponse != null)
-                                await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, data, client, "ReadAsStream", response, Startup.memoryCache));
+                            {
+                                if (statusCodeOK && response.StatusCode != HttpStatusCode.OK)
+                                {
+                                    await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, client, data, response, string.Empty)).ConfigureAwait(false);
+                                    return (false, response);
+                                }
 
-                            if (statusCodeOK && response.StatusCode != HttpStatusCode.OK)
-                                return (false, response);
+                                await content.LoadIntoBufferAsync().ConfigureAwait(false);
+
+                                string result = await content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
+                                await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, client, data, response, result)).ConfigureAwait(false);
+                            }
+                            else
+                            {
+                                if (statusCodeOK && response.StatusCode != HttpStatusCode.OK)
+                                    return (false, response);
+                            }
 
                             await using (var stream = await content.ReadAsStreamAsync(cts.Token).ConfigureAwait(false))
                             {
@@ -865,15 +891,15 @@ namespace Shared.Services
             catch (System.Exception ex)
             {
                 if (ex is not TaskCanceledException)
-                    Serilog.Log.Error(ex, "CatchId={CatchId}", "id_35f7be5e");
+                    Serilog.Log.Error(ex, "CatchId={CatchId}, Url={Url}", "id_35f7be5e", url);
 
                 if (EventListener.HttpResponse != null)
                 {
-                    await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, data, null, ex.ToString(), new HttpResponseMessage()
+                    await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, null, data, new HttpResponseMessage()
                     {
                         StatusCode = HttpStatusCode.InternalServerError,
                         RequestMessage = new HttpRequestMessage()
-                    }, Startup.memoryCache));
+                    }, ex.ToString())).ConfigureAwait(false);
                 }
 
                 return (false, new HttpResponseMessage()

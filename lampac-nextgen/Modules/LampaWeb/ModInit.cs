@@ -24,9 +24,8 @@ namespace LampaWeb
             foreach (var m in conf.limit_map)
                 CoreInit.conf.WAF.limit_map.Insert(0, m);
 
-            LampaCron.Run();
+            LampaCron.Start();
         }
-
 
         void updateConf()
         {
@@ -45,7 +44,10 @@ namespace LampaWeb
             });
         }
 
-
-        public void Dispose() { }
+        public void Dispose()
+        {
+            LampaCron.Stop();
+            EventListener.UpdateInitFile -= updateConf;
+        }
     }
 }

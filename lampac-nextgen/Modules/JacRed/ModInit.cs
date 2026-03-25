@@ -9,10 +9,12 @@ namespace JacRed
 {
     public class ModInit : IModuleLoaded
     {
+        public static bool IsDispose;
         public static JacRedConf conf;
 
         public void Loaded(InitspaceModel baseconf)
         {
+            IsDispose = false;
             Directory.CreateDirectory("cache/jacred");
 
             updateConf();
@@ -30,7 +32,7 @@ namespace JacRed
 
             ThreadPool.QueueUserWorkItem(async _ =>
             {
-                while (true)
+                while (!IsDispose)
                 {
                     await Task.Delay(TimeSpan.FromMinutes(5));
 
@@ -72,7 +74,6 @@ namespace JacRed
             });
         }
 
-
         void updateConf()
         {
             conf = ModuleInvoke.Init("JacRed", new JacRedConf()
@@ -88,7 +89,10 @@ namespace JacRed
             });
         }
 
-
-        public void Dispose() { }
+        public void Dispose()
+        {
+            IsDispose = true;
+            EventListener.UpdateInitFile -= updateConf;
+        }
     }
 }

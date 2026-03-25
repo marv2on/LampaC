@@ -26,10 +26,8 @@ namespace DLNA
                 CoreInit.conf.WAF.limit_map.Insert(0, m);
 
             DLNAController.Initialization();
-
-            TrackersCron.Run();
+            TrackersCron.Start();
         }
-
 
         void updateConf()
         {
@@ -48,7 +46,10 @@ namespace DLNA
             });
         }
 
-
-        public void Dispose() { }
+        public void Dispose()
+        {
+            EventListener.UpdateInitFile -= updateConf;
+            TrackersCron.Stop();
+        }
     }
 }

@@ -23,7 +23,6 @@ namespace Catalog
                 CoreInit.conf.WAF.limit_map.Insert(0, m);
         }
 
-
         void updateConf()
         {
             conf = ModuleInvoke.Init("Catalog", new ModuleBaseConf()
@@ -35,7 +34,10 @@ namespace Catalog
             });
         }
 
-        public void Dispose() { }
+        public void Dispose()
+        {
+            EventListener.UpdateInitFile -= updateConf;
+        }
 
 
         #region goInit

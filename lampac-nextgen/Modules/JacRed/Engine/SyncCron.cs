@@ -13,7 +13,7 @@ namespace JacRed.Engine
 
             DateTime lastSave = DateTime.Now;
 
-            while (true)
+            while (!ModInit.IsDispose)
             {
                 try
                 {

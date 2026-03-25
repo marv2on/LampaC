@@ -37,7 +37,7 @@ namespace TimeCode
         {
             conf = ModuleInvoke.Init("TimeCode", new ModuleBaseConf()
             {
-                limit_map = new List<WafLimitRootMap>()
+                limit_map = new List<WafLimitRootMap>() 
                 {
                     new("^/timecode/", new WafLimitMap { limit = 10, second = 1 })
                 }
@@ -45,6 +45,9 @@ namespace TimeCode
         }
 
 
-        public void Dispose() { }
+        public void Dispose()
+        {
+            EventListener.UpdateInitFile -= updateConf;
+        }
     }
 }

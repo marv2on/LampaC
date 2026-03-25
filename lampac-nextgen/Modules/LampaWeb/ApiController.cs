@@ -162,7 +162,7 @@ namespace LampaWeb.Controllers
             }
             else
             {
-                type = Regex.Replace(type, "[^a-z0-9\\-]", "", RegexOptions.IgnoreCase);
+                type = Regex.Replace(type, "[^a-z0-9\\-]", "");
             }
 
             string memKey = $"ApiController:{type}:{host}:app.min.js";
@@ -215,7 +215,7 @@ namespace LampaWeb.Controllers
 
                 file = bulder.ToString();
 
-                if (EventListener.AppReplace != null)
+                if (EventListener.AppReplace != null) 
                     file = EventListener.AppReplace.Invoke("appjs", new EventAppReplace(file, null, type, host, requestInfo, HttpContext.Request, hybridCache));
 
                 memoryCache.Set(memKey, file, DateTime.Now.AddMinutes(5));
@@ -250,7 +250,7 @@ namespace LampaWeb.Controllers
             }
             else
             {
-                type = Regex.Replace(type, "[^a-z0-9\\-]", "", RegexOptions.IgnoreCase);
+                type = Regex.Replace(type, "[^a-z0-9\\-]", "");
             }
 
 

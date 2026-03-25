@@ -230,7 +230,7 @@ namespace Core.Middlewares
                         {
                             #region cache
                             string md5key = CrypTo.md5(uriKeyFileCache);
-                            string targetFile = $"cache/hls/{md5key}";
+                            string targetFile = fileWatcher.OutFile(md5key);
 
                             var semaphore = new SemaphorManager(targetFile, ct);
 
@@ -263,7 +263,7 @@ namespace Core.Middlewares
 
                                 if (responseMessage.Content.Headers.ContentLength.Value == cacheLength)
                                 {
-                                    cacheFiles[md5key] = cacheLength;
+                                    fileWatcher.Add(md5key, cacheLength);
                                 }
                                 else
                                 {

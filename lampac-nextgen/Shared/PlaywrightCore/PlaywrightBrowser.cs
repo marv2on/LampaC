@@ -1,4 +1,5 @@
 using Microsoft.Playwright;
+using Shared.Models.Events;
 
 namespace Shared.PlaywrightCore
 {
@@ -190,6 +191,9 @@ namespace Shared.PlaywrightCore
 
         async public static Task<string> Get(BaseSettings init, string url, List<HeadersModel> headers = null, (string ip, string username, string password) proxy = default, List<Cookie> cookies = null)
         {
+            IResponse response = default;
+            string result = null;
+
             try
             {
                 using (var browser = new PlaywrightBrowser(init?.priorityBrowser))
@@ -200,8 +204,6 @@ namespace Shared.PlaywrightCore
 
                     if (cookies != null)
                         await page.Context.AddCookiesAsync(cookies).ConfigureAwait(false);
-
-                    IResponse response = default;
 
                     if (browser.firefox != null)
                     {
@@ -217,12 +219,44 @@ namespace Shared.PlaywrightCore
                     }
 
                     if (response != null)
-                        return await response.TextAsync().ConfigureAwait(false);
+                        result = await response.TextAsync().ConfigureAwait(false);
                 }
+
+                if (EventListener.PlaywrightHttpResponse != null)
+                {
+                    await EventListener.PlaywrightHttpResponse.Invoke(
+                        new EventPlaywrightHttpResponse(
+                            url: url,
+                            method: response?.Request?.Method,
+                            status: response?.Status ?? 0,
+                            requestHeaders: response?.Request?.Headers,
+                            responseHeaders: response?.Headers,
+                            result: result,
+                            error: null
+                        )
+                    ).ConfigureAwait(false);
+                }
+
+                return result;
             }
             catch (System.Exception ex)
             {
                 Log.Error(ex, "CatchId={CatchId}", "id_i56q6uea");
+
+                if (EventListener.PlaywrightHttpResponse != null)
+                {
+                    await EventListener.PlaywrightHttpResponse.Invoke(
+                        new EventPlaywrightHttpResponse(
+                            url: url,
+                            method: response?.Request?.Method,
+                            status: response?.Status ?? 0,
+                            requestHeaders: response?.Request?.Headers,
+                            responseHeaders: response?.Headers,
+                            result: result,
+                            error: ex.ToString()
+                        )
+                    ).ConfigureAwait(false);
+                }
             }
 
             return null;

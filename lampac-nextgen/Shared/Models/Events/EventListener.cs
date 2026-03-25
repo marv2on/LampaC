@@ -39,6 +39,8 @@ namespace Shared.Models.Events
 
         public static Func<EventHttpResponse, Task> HttpResponse;
 
+        public static Func<EventPlaywrightHttpResponse, Task> PlaywrightHttpResponse;
+
         public static Func<EventExternalids, (string imdb_id, string kinopoisk_id)> Externalids;
 
         public static Func<EventStreamQuality, (bool? next, string link)> StreamQuality;
