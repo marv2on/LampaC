@@ -76,9 +76,9 @@
 │  ┌─────────┐ ┌─────────┐ ┌──────────┐ ┌───────────────────┐    │
 │  │TmdbProxy│ │  Sync   │ │ TimeCode │ │     Tracks        │    │
 │  └─────────┘ └─────────┘ └──────────┘ └───────────────────┘    │
-│  ┌─────────┐                                                   │
-│  │CubProxy │                                                   │
-│  └─────────┘                                                   │
+│  ┌─────────┐ ┌─────────┐                                       │
+│  │CubProxy │ │ WebLog  │                                       │
+│  └─────────┘ └─────────┘                                       │
 └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -111,6 +111,7 @@
 - **TimeCode** — сохранение позиции воспроизведения (продолжение с места)
 - **TmdbProxy** — локальный кеш TMDB API для снижения нагрузки
 - **LampaWeb** — встроенный хостинг Lampa UI (авто-обновление с GitHub)
+- **WebLog** — веб-страница отладки исходящего HTTP и Playwright-трафика в реальном времени (WebSocket NWS, пароль root)
 - **Playwright** — автоматизация браузера (Chromium/Firefox) для обхода JS-защит
 - **RCH (Remote Client Hub)** — WebSocket-реле для клиентов за NAT
 - **Горячая перезагрузка конфига** — изменения в `init.conf` применяются без перезапуска
@@ -364,7 +365,7 @@ RUNTIME_ID=linux-arm64 ./build.sh
 
 ## Модули
 
-**Примечание по статусу модулей по умолчанию:** согласно `base.conf`, модули **Catalog**, **DLNA**, **Tracks** и **Transcoding** отключены по умолчанию (`SkipModules`). Также по умолчанию отключены **WAF** и **accsdb** (аутентификация).
+**Примечание по статусу модулей по умолчанию:** согласно `base.conf`, модули **Catalog**, **DLNA**, **Sync**, **Tracks**, **Transcoding** и **WebLog** отключены по умолчанию (`SkipModules`). Также по умолчанию отключены **WAF** и **accsdb** (аутентификация).
 
 > [!WARNING]
 > Модули **DLNA**, **Tracks**, **Transcoding** и **Catalog** не выполняют экранирование входящих запросов. **Не включайте их на публично доступном VPS** без ограничения доступа. Рекомендуется либо не активировать эти модули на публичном сервере, либо закрыть к ним доступ на уровне firewall/reverse proxy (разрешить только доверенные IP).
@@ -378,12 +379,13 @@ RUNTIME_ID=linux-arm64 ./build.sh
 | **DLNA** | ⛔ откл | DLNA/UPnP медиасервер. Обслуживает локальные файлы, автозагрузка трекеров торрентов. Форматы: aac, flac, mp4, mkv, ts, webm, avi и другие. Без экранирования запросов — только в доверенной сети. |
 | **JacRed** | ✅ вкл | Агрегатор торрент-индексаторов (совместимый с Jackett API). Источники: Rutor, Megapeer, Kinozal, Rutracker, NNMClub, Toloka, Bitru и другие. |
 | **LampaWeb** | ✅ вкл | Встроенный хостинг Lampa Web UI. Автообновление с GitHub каждые 90 минут. |
-| **Sync** | ✅ вкл | Синхронизация хранилища и закладок между устройствами. Эндпоинты `/storage/`, `/bookmark/`. SQLite-бэкенд. |
+| **Sync** | ⛔ откл | Синхронизация хранилища и закладок между устройствами. Эндпоинты `/storage/`, `/bookmark/`. SQLite-бэкенд. |
 | **TimeCode** | ✅ вкл | Сохранение и восстановление позиции воспроизведения (`resume from`). SQLite. |
 | **TmdbProxy** | ✅ вкл | Локальный кеш TMDB API (`cache/tmdb/`). Снижает нагрузку на TMDB и ускоряет ответы. |
 | **TorrServer** | ✅ вкл | Управление внешним процессом TorrServer. Проксирует `/ts/`. Генерирует случайный пароль за сессию. |
 | **Tracks** | ⛔ откл | Управление субтитрами и дорожками (`database/tracks/`). Интеграция с FFprobe (`/ffprobe`). Без экранирования запросов — только в доверенной сети. |
 | **Transcoding** | ⛔ откл | HLS/DASH транскодинг через FFmpeg. Макс. 5 параллельных заданий. Таймаут простоя 5 мин. Кеш: `cache/transcoding/`. Без экранирования запросов — только в доверенной сети. |
+| **WebLog** | ⛔ откл | Отладочная страница `/weblog`: поток исходящих HTTP-ответов сервера и событий Playwright в браузере через WebSocket (`/nws`). Подписка на поток — только после `RegistryWebLog` с паролем root (`rootPasswd`). Содержит URL, заголовки и тела запросов/ответов — не включайте на публично доступном хосте. |
 
 ### Подключение пользовательских модулей
 
@@ -514,6 +516,13 @@ RUNTIME_ID=linux-arm64 ./build.sh
 | `POST` | `/rch/result?id=` | RCH-реле: запись результата (макс. 10 МБ) |
 | `POST` | `/rch/gzresult?id=` | RCH-реле: запись gzip-результата (макс. 10 МБ) |
 | `WS` | `/ws` | NativeWebSocket для RCH push |
+| `GET` | `/stats/gc` | Использование памяти: managed heap (зарезервировано / занято / фрагментация), WorkingSet и PrivateMemory процесса (JSON) |
+| `GET` | `/stats/browser/context` | Статистика Playwright: число контекстов Chromium/Firefox, счётчики запросов контекста, последний ping Chromium (JSON) |
+| `GET` | `/stats/request` | Нагрузка: счётчики запросов за минуту/час (base, маршруты, proxy, img, NWS, боты), активные HTTP и TCP-соединения, топ медленных путей (JSON) |
+| `GET` | `/stats/tempdb` | Кеши и пулы: memory cache, HybridFileCache, прокси/RCH, счётчики пулов буферов и `RecyclableMemoryStream` (JSON) |
+| `GET` | `/stats/threadpool` | Диагностика `ThreadPool`: очередь, worker/IO-потоки, uptime процесса, эвристика «голодания» пула (JSON) |
+
+Эндпоинты `/stats/browser/context`, `/stats/request`, `/stats/tempdb` и `/stats/threadpool` отвечают **404**, если в конфиге не включено `openstat.enable: true`. Путь `/stats/gc` доступен всегда.
 
 ### Online (VOD)
 
@@ -549,6 +558,7 @@ RUNTIME_ID=linux-arm64 ./build.sh
 | `GET` | `/ffprobe` | Метаданные дорожек (FFprobe) |
 | `GET` | `/nexthub` | SISI NextHUB браузер |
 | `GET` | `/ts/…` | TorrServer |
+| `GET` | `/weblog` | Отладка HTTP/Playwright в реальном времени |
 
 ---
 
@@ -614,7 +624,8 @@ lampac/
 │   ├── TmdbProxy/
 │   ├── TorrServer/
 │   ├── Tracks/
-│   └── Transcoding/
+│   ├── Transcoding/
+│   └── WebLog/
 ├── config/
 │   └── base.conf               # Базовый шаблон конфигурации
 ├── docker/
