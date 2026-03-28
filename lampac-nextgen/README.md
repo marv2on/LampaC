@@ -76,9 +76,10 @@
 │  ┌─────────┐ ┌─────────┐ ┌──────────┐ ┌───────────────────┐    │
 │  │TmdbProxy│ │  Sync   │ │ TimeCode │ │     Tracks        │    │
 │  └─────────┘ └─────────┘ └──────────┘ └───────────────────┘    │
-│  ┌─────────┐ ┌─────────┐                                       │
-│  │CubProxy │ │ WebLog  │                                       │
-│  └─────────┘ └─────────┘                                       │
+│  ┌─────────┐ ┌─────────┐ ┌──────────┐ ┌───────────────────┐    │
+│  │CubProxy │ │ WebLog  │ │ NextHUB  │ │ OnlinePacks       │    │
+│  │         │ │         │ │ /nexthub │ │ RUS/Anime/ENG/UKR │    │
+│  └─────────┘ └─────────┘ └──────────┘ └───────────────────┘    │
 └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -88,11 +89,11 @@
 | --- | --- |
 | **Core** | Точка входа, Middleware Pipeline, основной `ApiController` |
 | **Shared** | Общие модели, базовые контроллеры, конфигурация, HTTP-пулы |
-| **Online** | Модуль VOD: агрегация потоков с ~60 провайдеров |
+| **Online** | Ядро VOD: основные провайдеры; часть источников вынесена в **OnlinePacks** (`Modules/OnlinePacks/`: RUS, Anime, ENG, UKR, GEO) |
 | **SISI** | Модуль контента 18+: ~15 платформ |
-| **Modules/** | Дополнительные модули, загружаемые как ASP.NET Application Parts |
+| **Modules/** | Остальные функциональные модули (каталог, прокси, TorrServer, NextHUB, Sync/Storage и др.) + упаковки Online |
 
-Каждый модуль — отдельная .NET-библиотека с исходным кодом, компилируемая при запуске сервера через Roslyn (`CSharpEval`). Папка `module/` содержит **базовые модули**, поставляемые вместе с сервером. Папка `mods/` предназначена для **пользовательских модулей** — пользователь самостоятельно размещает там папку модуля с исходниками.
+Сборочные модули (Online, SISI, Catalog, прокси, синхронизация и др.) подключаются как **скомпилированные сборки** из каталога `runtimes/references/` при старте процесса (`Core.dll`). Параллельно в образе/публикации присутствуют каталоги **`module/`** и **`mods/`**: туда копируются исходники из `Modules/`, `Online/`, `SISI/` и `TestModules/` (см. `Core.csproj`) — их компилирует **Roslyn** (`CSharpEval`) при запуске, что даёт горячую подгрузку и пользовательские оверлеи. Дополнительно пользователь может положить свои модули в **`mods/`** на машине с уже развёрнутым сервером (рядом с `Core.dll`), не пересобирая solution целиком.
 
 ---
 
@@ -125,38 +126,52 @@
 
 ### Docker
 
+Compose-файлы лежат в **корне репозитория** (`docker-compose.yaml` — обычный запуск, `docker-compose.dev.yaml` — разработка с другим портом и конфигом).
+
 ```bash
 # Клонировать репозиторий
 git clone https://github.com/lampac-nextgen/lampac.git
 cd lampac
 
-# Запустить через docker compose
-docker compose -f docker/docker-compose.yaml up -d
+# Подготовить каталог на хосте (в репозитории его нет — создайте сами)
+mkdir -p lampac-docker/config lampac-docker/plugins
+cp config/example.init.conf lampac-docker/config/init.conf
+# для docker-compose.dev.yaml также нужен отдельный файл:
+# cp config/example.init.conf lampac-docker/config/development.init.conf
+printf '%s' 'ваш_надёжный_пароль_root' > lampac-docker/config/passwd
+
+# Запуск (из корня клона)
+docker compose -f docker-compose.yaml up -d
 ```
 
-Сервер будет доступен по адресу `http://<IP>:9118`.
+Сервер в продовом compose слушает **9118** (`ports: 9118:9118`). В **`docker-compose.dev.yaml`** проброшен порт **29118** и монтируется `development.init.conf` — удобно, если основной порт уже занят.
 
-Основные тома для монтирования:
+**Как устроено в репозитории:** рабочая директория процесса в образе — `/lampac`. Файлы **`passwd`** и **`init.conf`** читаются из **корня этой директории** (не из подкаталога `config/` внутри контейнера). В compose они монтируются так:
 
-| Путь в контейнере | Описание |
-| --- | --- |
-| `/lampac/config/passwd` | Файл с root-паролем |
-| `/lampac/config/init.conf` | Основной файл конфигурации |
-| `/lampac/module/` | Базовые модули (исходники, поставляются с сервером, компилируются при запуске) |
-| `/lampac/mods/` | Пользовательские модули (исходники, подкладываются пользователем, компилируются при запуске) |
+| Путь на хосте (пример из репозитория) | Путь в контейнере | Назначение |
+| --- | --- | --- |
+| `./lampac-docker/config/passwd` | `/lampac/passwd` | Пароль root (WebLog, служебные функции) |
+| `./lampac-docker/config/init.conf` | `/lampac/init.conf` | Основная конфигурация |
+| `./lampac-docker/plugins/lampainit.js` | `/lampac/plugins/override/lampainit.js` | Переопределение клиентского плагина (опционально) |
 
-**Пример `docker-compose.yaml`:**
+В **`docker-compose.yaml`** по умолчанию отдельная bridge-сеть с фиксированным IP контейнера (`10.10.10.10`); `network_mode: host` **закомментирован**. При необходимости host-сети раскомментируйте `network_mode: host` и уберите/измените блок `ports`/`networks` в своём override.
+
+Каталоги **`module/`** и **`mods/`** в образе уже заполнены поставкой; дополнительно монтировать их нужно только если переопределяете исходники модулей (см. закомментированные примеры в compose).
+
+**Упрощённый пример сервиса (эквивалент идеи из репозитория):**
 
 ```yaml
 services:
   lampac:
     image: ghcr.io/lampac-nextgen/lampac
-    network_mode: host
+    ports:
+      - "9118:9118"
     shm_size: 1024mb
-    volumes:
-      - ./config/passwd:/lampac/config/passwd
-      - ./config/init.conf:/lampac/config/init.conf
     restart: unless-stopped
+    volumes:
+      - ./lampac-docker/config/passwd:/lampac/passwd
+      - ./lampac-docker/config/init.conf:/lampac/init.conf
+      - ./lampac-docker/plugins/lampainit.js:/lampac/plugins/override/lampainit.js
 ```
 
 ### Нативная установка (Linux)
@@ -224,7 +239,7 @@ RUNTIME_ID=linux-arm64 ./build.sh
 
 ### Пример конфигурации в репозитории
 
-В репозитории лежит готовый **пример** [`config/example.init.conf`](config/example.init.conf): скопируйте его в рабочий `init.conf` и отредактируйте под себя. Типичные пути: при [нативной установке](#нативная-установка-linux) — `/opt/lampac/init.conf` (рядом с `Core.dll`, корень можно задать через `LAMPAC_INSTALL_ROOT`); при [Docker](#docker) — `./config/init.conf` на хосте с монтированием в `/lampac/config/init.conf` в контейнере.
+В репозитории лежат примеры [`config/example.init.conf`](config/example.init.conf) и [`config/example.init.yaml`](config/example.init.yaml): скопируйте нужный вариант в рабочий `init.conf` (или используйте `init.yaml` рядом) и отредактируйте под себя. Типичные пути: при [нативной установке](#нативная-установка-linux) — `/opt/lampac/init.conf` (рядом с `Core.dll`, корень задаётся через `LAMPAC_INSTALL_ROOT`); при [Docker](#docker) — на хосте, например `./lampac-docker/config/init.conf`, с монтированием в **`/lampac/init.conf`** в контейнере (как в `docker-compose.yaml`).
 
 Пример демонстрирует:
 
@@ -280,10 +295,8 @@ RUNTIME_ID=linux-arm64 ./build.sh
     "requiredConnected": 1
   },
 
-  // Логирование
-  "serilog": {
-    "enable": false             // запись в файл logs/ (14 дней хранения)
-  },
+  // Логирование (файлы в logs/, 14 дней хранения при включении)
+  "serilog": false,
 
   // Управление памятью
   "GC": {
@@ -365,7 +378,7 @@ RUNTIME_ID=linux-arm64 ./build.sh
 
 ## Модули
 
-**Примечание по статусу модулей по умолчанию:** согласно `base.conf`, модули **Catalog**, **DLNA**, **Sync**, **Tracks**, **Transcoding** и **WebLog** отключены по умолчанию (`SkipModules`). Также по умолчанию отключены **WAF** и **accsdb** (аутентификация).
+**Примечание по статусу модулей по умолчанию:** согласно [`config/base.conf`](config/base.conf), в `SkipModules` по умолчанию указаны **Catalog**, **DLNA**, **Sync**, **SyncEvents**, **Storage**, **Tracks**, **Transcoding** и **WebLog**. Также по умолчанию отключены **WAF** и **accsdb** (аутентификация).
 
 > [!WARNING]
 > Модули **DLNA**, **Tracks**, **Transcoding** и **Catalog** не выполняют экранирование входящих запросов. **Не включайте их на публично доступном VPS** без ограничения доступа. Рекомендуется либо не активировать эти модули на публичном сервере, либо закрыть к ним доступ на уровне firewall/reverse proxy (разрешить только доверенные IP).
@@ -379,7 +392,10 @@ RUNTIME_ID=linux-arm64 ./build.sh
 | **DLNA** | ⛔ откл | DLNA/UPnP медиасервер. Обслуживает локальные файлы, автозагрузка трекеров торрентов. Форматы: aac, flac, mp4, mkv, ts, webm, avi и другие. Без экранирования запросов — только в доверенной сети. |
 | **JacRed** | ✅ вкл | Агрегатор торрент-индексаторов (совместимый с Jackett API). Источники: Rutor, Megapeer, Kinozal, Rutracker, NNMClub, Toloka, Bitru и другие. |
 | **LampaWeb** | ✅ вкл | Встроенный хостинг Lampa Web UI. Автообновление с GitHub каждые 90 минут. |
-| **Sync** | ⛔ откл | Синхронизация хранилища и закладок между устройствами. Эндпоинты `/storage/`, `/bookmark/`. SQLite-бэкенд. |
+| **NextHUB** | ✅ вкл | Браузер NextHUB для SISI. Маршрут `/nexthub`. Для маршрута настроен лимит WAF. |
+| **Sync** | ⛔ откл | Синхронизация хранилища и закладок между устройствами. Эндпоинты `/storage/`, `/bookmark/`. SQLite-бэкенд. Для расширенной схемы см. **SyncEvents** и **Storage**. |
+| **SyncEvents** | ⛔ откл | Трансляция событий синхронизации через NWS (`NwsEvents`). |
+| **Storage** | ⛔ откл | Модуль хранилища в связке с Sync: NWS (`onlyreg`), пользовательские лимиты WAF из конфигурации модуля. |
 | **TimeCode** | ✅ вкл | Сохранение и восстановление позиции воспроизведения (`resume from`). SQLite. |
 | **TmdbProxy** | ✅ вкл | Локальный кеш TMDB API (`cache/tmdb/`). Снижает нагрузку на TMDB и ускоряет ответы. |
 | **TorrServer** | ✅ вкл | Управление внешним процессом TorrServer. Проксирует `/ts/`. Генерирует случайный пароль за сессию. |
@@ -601,11 +617,8 @@ lampac/
 │   ├── BaseController.cs       # Базовый контроллер
 │   ├── Models/                 # Общие модели данных
 │   └── Services/               # Shared-сервисы
-├── Online/                     # VOD-модуль
-│   ├── Controllers/            # Контроллеры провайдеров (~60 источников)
-│   │   ├── Anime/              # Аниме-провайдеры
-│   │   ├── ENG/                # Англоязычный контент
-│   │   └── UKR/                # Украинские CDN
+├── Online/                     # Ядро VOD-модуля
+│   ├── Controllers/            # Основные провайдеры (RU и общие)
 │   ├── Config/                 # Конфигурационные модели
 │   ├── ModInit.cs              # Инициализация модуля, загрузка БД
 │   └── OnlineApi.cs            # `/online.js` эндпоинт
@@ -613,24 +626,28 @@ lampac/
 │   ├── Controllers/            # Контроллеры платформ
 │   ├── ModInit.cs              # Инициализация, SQLite, таймер очистки
 │   └── SisiApi.cs              # `/sisi.js` эндпоинт
-├── Modules/                    # Дополнительные модули
+├── Modules/                    # Дополнительные модули и пакеты Online
 │   ├── Catalog/
 │   ├── CubProxy/
 │   ├── DLNA/
 │   ├── JacRed/
 │   ├── LampaWeb/
-│   ├── Sync/
-│   ├── TimeCode/
-│   ├── TmdbProxy/
+│   ├── NextHUB/
+│   ├── OnlinePacks/            # OnlineRUS, OnlineAnime, OnlineENG, OnlineUKR, OnlineGEO
+│   ├── Proxy/                  # TmdbProxy и др.
+│   ├── Sync/                   # Sync, TimeCode, SyncEvents, Storage
 │   ├── TorrServer/
 │   ├── Tracks/
 │   ├── Transcoding/
 │   └── WebLog/
+├── TestModules/                # Тестовые/примерные модули (в publish → mods/)
+│   └── Lamson/
 ├── config/
-│   └── base.conf               # Базовый шаблон конфигурации
-├── docker/
-│   ├── docker-compose.yaml     # Продакшн compose-файл
-│   └── docker-compose.dev.yaml # Dev compose-файл
+│   ├── base.conf               # Базовый шаблон конфигурации
+│   ├── example.init.conf
+│   └── example.init.yaml
+├── docker-compose.yaml         # Compose (прод), корень репозитория
+├── docker-compose.dev.yaml     # Compose для разработки (порт 29118)
 ├── Dockerfile                  # Мультистейдж, мультиплатформ образ
 ├── build.sh                    # Скрипт сборки
 ├── install.sh                  # Скрипт нативной установки (Debian/Ubuntu)

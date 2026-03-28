@@ -20,7 +20,7 @@ namespace OnlineRUS.Controllers
             if (await IsRequestBlocked(rch: true))
                 return badInitMsg;
 
-        reset:
+            reset:
 
             #region search
             List<Video> data = await search(kinopoisk_id);
@@ -331,7 +331,7 @@ namespace OnlineRUS.Controllers
                 if (cache.playlist == null || cache.playlist.Count == 0)
                     return result.Fail("playlist:empty");
 
-            reset_episode:
+                reset_episode:
 
                 string episode = cache.playlist
                     .FirstOrDefault(i => i.id == s)?.folder
@@ -388,7 +388,7 @@ namespace OnlineRUS.Controllers
             if (await IsRequestBlocked(rch: true))
                 return badInitMsg;
 
-        rhubFallback:
+            rhubFallback:
             var cache = await InvokeCacheResult<List<Video>>($"hdvb:search:{title}", TimeSpan.FromHours(4), async e =>
             {
                 var newheaders = HeadersModel.Init(Http.defaultFullHeaders);

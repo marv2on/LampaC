@@ -97,7 +97,7 @@
 
     var plugins = Lampa.Plugins.get();
 
-    var plugins_add = [{initiale}];
+    var plugins_add = {initiale};
 
     var plugins_push = [];
 

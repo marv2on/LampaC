@@ -33,7 +33,7 @@ namespace OnlineRUS.Controllers
             if (string.IsNullOrEmpty(init?.token))
                 return OnError();
 
-        rhubFallback:
+            rhubFallback:
             var cache = await InvokeCacheResult<SearchItem>($"flixcdn:search:{imdb_id}:{kinopoisk_id}:{title}:{similar}", TimeSpan.FromHours(4), async e =>
             {
                 if (similar || (kinopoisk_id == 0 && string.IsNullOrEmpty(imdb_id)))

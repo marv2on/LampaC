@@ -37,7 +37,7 @@ namespace OnlineRUS.Controllers
             {
                 if (s == -1)
                 {
-                    #region Сезоны
+                #region Сезоны
                 rhubFallback:
 
                     var cache = await InvokeCacheResult<List<Season>>($"kinotochka:seasons:{title}", TimeSpan.FromHours(4), textJson: true, onget: async e =>
@@ -128,7 +128,7 @@ namespace OnlineRUS.Controllers
                 }
                 else
                 {
-                    #region Серии
+                #region Серии
                 rhubFallback:
 
                     var cache = await InvokeCacheResult<List<Episode>>($"kinotochka:playlist:{newsuri}", 30, textJson: true, onget: async e =>
@@ -188,7 +188,7 @@ namespace OnlineRUS.Controllers
                 if (kinopoisk_id == 0)
                     return OnError();
 
-            rhubFallback:
+                rhubFallback:
                 var cache = await InvokeCacheResult<EmbedModel>($"kinotochka:view:{kinopoisk_id}", 30, textJson: true, onget: async e =>
                 {
                     string file = null;
