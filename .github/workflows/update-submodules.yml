@@ -243,3 +243,64 @@ jobs:
             --tag ghcr.io/marv2on/jacred:${VERSION} \
             ghcr.io/jacred-fdb/jacred:latest
           echo "Mirror done → ghcr.io/marv2on/jacred:latest"
+
+      # ── Release: jacred-egorrrmiller ─────────────────────────────────────
+      - name: Sync jacred-egorrrmiller release
+        id: jacred_egorrrmiller_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          LATEST=$(curl -sf https://api.github.com/repos/egorrrmiller/jacred/releases/latest)
+          VERSION=$(echo "$LATEST" | grep '"tag_name"' | cut -d'"' -f4)
+          TAG="${VERSION}-egorrrmiller"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG already exists, skipping."
+            echo "new_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          ASSET_URLS=$(echo "$LATEST" | grep 'browser_download_url' | cut -d'"' -f4)
+          FILES=""
+          while IFS= read -r url; do
+            [ -z "$url" ] && continue
+            origname=$(basename "$url")
+            curl -L "$url" -o "/tmp/${origname}"
+            FILES="$FILES /tmp/${origname}"
+          done <<< "$ASSET_URLS"
+          if [ -z "$FILES" ]; then
+            echo "new_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          gh release create "$TAG" $FILES \
+            --title "JacRed egorrrmiller $VERSION" \
+            --notes "Auto-synced from egorrrmiller/jacred release $VERSION"
+          echo "new_release=true" >> "$GITHUB_OUTPUT"
+
+      # Mirror jacred-egorrrmiller
+      - name: Check jacred-egorrrmiller Docker image
+        id: jacred_egorrrmiller_check
+        run: |
+          set -euo pipefail
+          UPSTREAM=$(docker buildx imagetools inspect ghcr.io/egorrrmiller/jacred:latest \
+            --format '{{json .Manifest.Digest}}' 2>/dev/null | tr -d '"' || echo "")
+          OUR=$(docker buildx imagetools inspect ghcr.io/marv2on/jacred-egorrrmiller:latest \
+            --format '{{json .Manifest.Digest}}' 2>/dev/null | tr -d '"' || echo "")
+          echo "upstream: $UPSTREAM"
+          echo "ours:     $OUR"
+          if [ -n "$UPSTREAM" ] && [ "$UPSTREAM" != "$OUR" ]; then
+            echo "needs_mirror=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_mirror=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mirror jacred-egorrrmiller Docker image
+        if: steps.jacred_egorrrmiller_check.outputs.needs_mirror == 'true'
+        run: |
+          VERSION="${{ steps.jacred_egorrrmiller_release.outputs.version }}"
+          docker buildx imagetools create \
+            --tag ghcr.io/marv2on/jacred-egorrrmiller:latest \
+            --tag ghcr.io/marv2on/jacred-egorrrmiller:${VERSION} \
+            ghcr.io/egorrrmiller/jacred:latest
+          echo "Mirror done → ghcr.io/marv2on/jacred-egorrrmiller:latest"
