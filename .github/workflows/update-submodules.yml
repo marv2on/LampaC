@@ -251,8 +251,22 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          LATEST=$(curl -sf https://api.github.com/repos/egorrrmiller/jacred/releases/latest)
+          LATEST=$(curl -sf https://api.github.com/repos/egorrrmiller/jacred/releases/latest || echo "")
+          if [ -z "$LATEST" ]; then
+            echo "No releases found for egorrrmiller/jacred, skipping."
+            echo "version=" >> "$GITHUB_OUTPUT"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            echo "new_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           VERSION=$(echo "$LATEST" | grep '"tag_name"' | cut -d'"' -f4)
+          if [ -z "$VERSION" ]; then
+            echo "Could not parse version, skipping."
+            echo "version=" >> "$GITHUB_OUTPUT"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            echo "new_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           TAG="${VERSION}-egorrrmiller"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
@@ -261,7 +275,7 @@ jobs:
             echo "new_release=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          ASSET_URLS=$(echo "$LATEST" | grep 'browser_download_url' | cut -d'"' -f4)
+          ASSET_URLS=$(echo "$LATEST" | grep 'browser_download_url' | cut -d'"' -f4 || echo "")
           FILES=""
           while IFS= read -r url; do
             [ -z "$url" ] && continue
@@ -269,7 +283,9 @@ jobs:
             curl -L "$url" -o "/tmp/${origname}"
             FILES="$FILES /tmp/${origname}"
           done <<< "$ASSET_URLS"
+          FILES=$(echo "$FILES" | xargs)
           if [ -z "$FILES" ]; then
+            echo "No assets found, skipping."
             echo "new_release=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
