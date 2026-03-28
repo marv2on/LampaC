@@ -47,7 +47,9 @@ jobs:
           }
           sync_repo "Lampac"           "https://github.com/lampac-talks/lampac"
           sync_repo "lampa-source"     "https://github.com/yumata/lampa-source"
-          sync_repo "lampac-ukraine"   "https://github.com/lampame/lampac-ukraine"
+          sync_repo "lampac-ukraine"    "https://github.com/lampame/lampac-ukraine"
+          sync_repo "lampac-ukraine-ng"       "https://github.com/lampame/lampac-ukraine" "lampac-ng"
+          sync_repo "lampac-ukraine-graveyard" "https://github.com/lampame/lampac-ukraine" "Graveyard"
           sync_repo "Alcopac_docker"   "https://github.com/Kirill9732/Alcopac_docker"
           sync_repo "jacred"           "https://github.com/jacred-fdb/jacred"
           sync_repo "jacred-jackett"   "https://github.com/egorrrmiller/jacred"
