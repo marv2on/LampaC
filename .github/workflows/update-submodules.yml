@@ -60,11 +60,11 @@ jobs:
           if [ -f .gitmodules ]; then
             git rm -f .gitmodules || true
           fi
+          git add .
           if git diff --quiet HEAD; then
             echo "No embedded repo updates found"
             exit 0
           fi
-          git add .
           git commit -m "chore: sync embedded repositories"
           git push origin main
 
