@@ -4,7 +4,7 @@ namespace Shared.Models.Module
 {
     public class OnlineEventsModel
     {
-        public OnlineEventsModel(string id, string imdb_id, long kinopoisk_id, string title, string original_title, string original_language, int year, string source, string rchtype, int serial, bool life, bool islite, string account_email, string uid, string token, string nws_id, JObject kitconf)
+        public OnlineEventsModel(string id, string imdb_id, long kinopoisk_id, string title, string original_title, string original_language, int year, string source, string rchtype, int serial, bool isanime, bool life, bool islite, string account_email, string uid, string token, string nws_id, JObject kitconf)
         {
             this.id = id;
             this.imdb_id = imdb_id;
@@ -16,6 +16,7 @@ namespace Shared.Models.Module
             this.source = source;
             this.rchtype = rchtype;
             this.serial = serial;
+            this.isanime = isanime;
             this.life = life;
             this.islite = islite;
             this.account_email = account_email;
@@ -35,6 +36,7 @@ namespace Shared.Models.Module
         public string source { get; set; }
         public string rchtype { get; set; }
         public int serial { get; set; }
+        public bool isanime { get; set; }
         public bool life { get; set; }
         public bool islite { get; set; }
         public string account_email { get; set; }

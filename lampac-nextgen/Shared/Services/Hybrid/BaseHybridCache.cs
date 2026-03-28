@@ -2,13 +2,15 @@ namespace Shared.Services.Hybrid
 {
     public record HybridCacheEntry<T>(bool success, T value, bool singleCache);
 
+    public record TempEntry(DateTimeOffset extend, bool IsSerialize, bool textJson, DateTimeOffset ex, object value);
+
+
     public class BaseHybridCache
     {
         public static readonly Serilog.ILogger Log = Serilog.Log.ForContext<BaseHybridCache>();
+
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, CollectionMetadata> CollectionMetadataCache = new();
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, Func<object, int>> CountReaderCache = new();
-
-        public record TempEntry(DateTimeOffset extend, bool IsSerialize, bool textJson, DateTimeOffset ex, object value);
 
         private record CollectionMetadata(bool IsCapacityCollection, Func<int, object> CapacityFactory);
 

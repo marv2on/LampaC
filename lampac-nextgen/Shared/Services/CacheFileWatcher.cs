@@ -31,27 +31,34 @@ namespace Shared.Services
 
             if (Directory.Exists(folder))
             {
-                foreach (var file in new DirectoryInfo(folder).EnumerateFiles("*", new EnumerationOptions
+                Parallel.ForEach(Directory.GetDirectories(folder), new ParallelOptions
                 {
-                    RecurseSubdirectories = true,
-                    IgnoreInaccessible = true,
-                    AttributesToSkip = FileAttributes.ReparsePoint
-                }))
+                    MaxDegreeOfParallelism = Environment.ProcessorCount
+                },
+                dir =>
                 {
-                    try
+                    foreach (var file in new DirectoryInfo(dir).EnumerateFiles("*", new EnumerationOptions
                     {
-                        cache.TryAdd(file.Name, new CacheFileModel()
+                        RecurseSubdirectories = true,
+                        IgnoreInaccessible = true,
+                        AttributesToSkip = FileAttributes.ReparsePoint
+                    }))
+                    {
+                        try
                         {
-                            FullPath = file.FullName,
-                            Length = (int)file.Length,
-                            LastWriteTimeUtc = file.LastWriteTimeUtc,
-                        });
+                            cache.TryAdd(file.Name, new CacheFileModel()
+                            {
+                                FullPath = file.FullName,
+                                Length = (int)file.Length,
+                                LastWriteTimeUtc = file.LastWriteTimeUtc,
+                            });
+                        }
+                        catch (System.Exception ex)
+                        {
+                            Log.Error(ex, "CatchId={CatchId}", "id_uv8f7e4q");
+                        }
                     }
-                    catch (System.Exception ex)
-                    {
-                        Log.Error(ex, "CatchId={CatchId}", "id_uv8f7e4q");
-                    }
-                }
+                });
             }
             else
             {

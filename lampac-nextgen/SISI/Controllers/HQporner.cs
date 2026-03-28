@@ -11,7 +11,7 @@ namespace SISI.Controllers
         public HQporner() : base(ModInit.siteConf.HQporner) { }
 
         [HttpGet]
-        [Staticache(11)]
+        [Staticache]
         [Route("hqr")]
         async public Task<ActionResult> Index(string search, string sort, string c, int pg = 1)
         {

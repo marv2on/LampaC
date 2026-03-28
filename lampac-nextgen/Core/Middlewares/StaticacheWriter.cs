@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using Shared.Attributes;
 using Shared.Services;
 using Shared.Services.Pools;
 using System;
@@ -49,7 +50,12 @@ namespace Core.Middlewares
                             ? "application/json; charset=utf-8"
                             : "text/html; charset=utf-8";
 
-                        var ex = DateTime.Now.AddMinutes(stc.route.cacheMinutes);
+                        var ex = httpContext.Features.Get<StatiCacheEntry>()?.ex
+                            ?? DateTimeOffset.Now.AddMinutes(stc.route.cacheMinutes);
+
+                        if (DateTimeOffset.Now > ex)
+                            return;
+
                         string cachefile = Staticache.getFilePath(cachekey, ex, contentType);
 
                         await using (var fileStream = new FileStream(cachefile, FileMode.Create, FileAccess.Write, FileShare.None,
@@ -59,7 +65,7 @@ namespace Core.Middlewares
                             await fileStream.WriteAsync(buff.WrittenMemory);
                         }
 
-                        Staticache.cacheFiles.TryAdd(cachekey, new(ex, contentType));
+                        Staticache.cacheFiles.TryAdd(cachekey, new(ex, contentType, cachefile));
                     }
                     catch (Exception ex)
                     {

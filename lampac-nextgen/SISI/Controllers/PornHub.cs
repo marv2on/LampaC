@@ -38,7 +38,7 @@ namespace SISI.Controllers
 
             try
             {
-            reset: // http запросы последовательно 
+            reset: // http запросы последовательно
                 if (rch?.enable != true)
                 {
                     semaphore ??= new SemaphorManager(semaphoreKey, TimeSpan.FromSeconds(30));
@@ -118,7 +118,7 @@ namespace SISI.Controllers
 
 
         [HttpGet]
-        [Staticache(1)]
+        [Staticache]
         [Route("phub/vidosik")]
         async public Task<ActionResult> Index(string vkey, bool related)
         {

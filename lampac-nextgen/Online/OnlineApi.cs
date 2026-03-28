@@ -8,7 +8,6 @@ using Shared.Models.Events;
 using Shared.Models.Module;
 using Shared.Models.Module.Entrys;
 using Online.SQL;
-using Shared.PlaywrightCore;
 using System.Data;
 using System.Text;
 using IO = System.IO;
@@ -105,7 +104,11 @@ namespace Online.Controllers
 
             if (EventListener.AppReplace != null)
             {
-                string source = EventListener.AppReplace.Invoke("online", new EventAppReplace(cache.file, token, null, host, requestInfo, HttpContext.Request, hybridCache));
+                string source = cache.file;
+
+                foreach (Func<string, EventAppReplace, string> handler in EventListener.AppReplace.GetInvocationList())
+                    source = handler.Invoke("online", new EventAppReplace(source, token, null, host, requestInfo, HttpContext.Request));
+
                 return Content(source.Replace("{token}", HttpUtility.UrlEncode(token)), "application/javascript; charset=utf-8");
             }
 
@@ -132,21 +135,8 @@ namespace Online.Controllers
                 return Content(jsonResult, "application/json; charset=utf-8");
             #endregion
 
-            #region externalids
             if (externalids == null)
-            {
                 externalids = JsonConvert.DeserializeObject<ConcurrentDictionary<string, string>>(IO.File.ReadAllText("data/externalids.json"));
-
-                if (Lumex.database != null)
-                {
-                    foreach (var item in Lumex.database)
-                    {
-                        if (!string.IsNullOrEmpty(item.imdb_id) && item.kinopoisk_id > 0)
-                            externalids.AddOrUpdate(item.imdb_id, item.kinopoisk_id.ToString(), (k, v) => item.kinopoisk_id.ToString());
-                    }
-                }
-            }
-            #endregion
 
             #region KP_
             if (id != null && id.StartsWith("KP_"))
@@ -170,7 +160,7 @@ namespace Online.Controllers
                     string mkey = $"externalids:KP_:{_kp}";
                     if (!hybridCache.TryGetValue(mkey, out string _imdbid))
                     {
-                        var alloha = ModInit.premiumConf.Alloha;
+                        var alloha = ModInit.siteConf.Alloha;
                         var proxyManager = new ProxyManager("alloha", alloha);
 
                         string json = await Http.Get($"{alloha.apihost}/?token={alloha.token ?? "04941a9a3ca3ac16e2b4327347bbc1"}&kp=" + _kp, timeoutSeconds: 5, proxy: proxyManager.Get());
@@ -187,12 +177,17 @@ namespace Online.Controllers
             async Task<string> getAlloha(string imdb)
             {
                 string kpid = null;
-                var alloha = ModInit.premiumConf.Alloha;
+                var alloha = ModInit.siteConf.Alloha;
                 var proxyManager = new ProxyManager("alloha", alloha);
 
-                await Http.GetSpan($"{alloha.apihost}/?token={alloha.token ?? "04941a9a3ca3ac16e2b4327347bbc1"}&imdb={imdb}", timeoutSeconds: 5, proxy: proxyManager.Get(), spanAction: json =>
+                var bearer = HeadersModel.Init(
+                    ("Authorization", $"Bearer {alloha.token ?? "04941a9a3ca3ac16e2b4327347bbc1"}"),
+                    ("Accept", "application/json")
+                );
+
+                await Http.GetSpan($"{alloha.apihost}/movies/search?imdb={imdb}", timeoutSeconds: 5, headers: bearer, proxy: proxyManager.Get(), spanAction: json =>
                 {
-                    kpid = Rx.Match(json, "\"id_kp\":([0-9]+),");
+                    kpid = Rx.Match(json, "\"ids\":{\"kp\":([0-9]+),");
                 });
 
                 if (!string.IsNullOrEmpty(kpid) && kpid != "0" && kpid != "null")
@@ -204,9 +199,8 @@ namespace Online.Controllers
             async Task<string> getTabus(string imdb)
             {
                 string kpid = null;
-                var proxyManager = new ProxyManager("collaps", ModInit.siteConf.Collaps);
 
-                await Http.GetSpan("https://api.bhcesh.me/franchise/details?token=d39edcf2b6219b6421bffe15dde9f1b3&imdb_id=" + imdb.Remove(0, 2), timeoutSeconds: 5, proxy: proxyManager.Get(), spanAction: json =>
+                await Http.GetSpan("https://api.bhcesh.me/franchise/details?token=d39edcf2b6219b6421bffe15dde9f1b3&imdb_id=" + imdb.Remove(0, 2), timeoutSeconds: 5, spanAction: json =>
                 {
                     kpid = Rx.Match(json, "\"kinopoisk_id\":\"?([0-9]+)\"?");
                 });
@@ -379,12 +373,15 @@ namespace Online.Controllers
 
             if (EventListener.Externalids != null)
             {
-                var result = EventListener.Externalids.Invoke(new EventExternalids(id, imdb_id, kpid, serial));
-
-                if (result.imdb_id != null || result.kinopoisk_id != null)
+                foreach (Func<EventExternalids, (string imdb_id, string kinopoisk_id)> handler in EventListener.Externalids.GetInvocationList())
                 {
-                    imdb_id = result.imdb_id;
-                    kpid = result.kinopoisk_id;
+                    var result = handler(new EventExternalids(id, imdb_id, kpid, serial));
+
+                    if (string.IsNullOrWhiteSpace(imdb_id) && !string.IsNullOrWhiteSpace(result.imdb_id))
+                        imdb_id = result.imdb_id;
+
+                    if ((string.IsNullOrWhiteSpace(kpid) || kpid == "0") && !string.IsNullOrWhiteSpace(result.kinopoisk_id) && result.kinopoisk_id != "0")
+                        kpid = result.kinopoisk_id;
                 }
             }
 
@@ -426,50 +423,10 @@ namespace Online.Controllers
 
             bool isanime = HttpContext.Request.Path.Value?.EndsWith("/anime") == true;
 
-            #region module
-            OnlineModuleEntry.EnsureCache();
-            var spiderArgs = new OnlineSpiderModel(title, isanime);
-
-            if (OnlineModuleEntry.onlineModulesCache != null && OnlineModuleEntry.onlineModulesCache.Count > 0)
-            {
-                void addResult(List<ModuleOnlineSpiderItem> result)
-                {
-                    if (result == null || result.Count == 0)
-                        return;
-
-                    foreach (var item in result)
-                    {
-                        if (string.IsNullOrEmpty(item.name) || string.IsNullOrEmpty(item.url))
-                            continue;
-
-                        piders.Add((item.name, item.url, item.index));
-                    }
-                }
-
-                foreach (var entry in OnlineModuleEntry.onlineModulesCache)
-                {
-                    try
-                    {
-                        var result = entry.Spider(HttpContext, memoryCache, requestInfo, host, spiderArgs);
-                        if (result != null && result.Count > 0)
-                            addResult(result);
-
-                        result = await entry.SpiderAsync(HttpContext, memoryCache, requestInfo, host, spiderArgs);
-                        if (result != null && result.Count > 0)
-                            addResult(result);
-                    }
-                    catch (Exception ex)
-                    {
-                        Serilog.Log.Error(ex, "CatchId={CatchId}", "id_bd1de14c");
-                    }
-                }
-            }
-            #endregion
-
             #region send
             void send(BaseSettings init, string plugin = null)
             {
-                if (!init.spider || !init.enable || init.rip)
+                if (init == null || !init.spider || !init.enable || init.rip)
                     return;
 
                 if (init.geo_hide != null)
@@ -509,42 +466,59 @@ namespace Online.Controllers
             }
             #endregion
 
-            if (isanime)
-            {
-                var animeConf = ModInit.animeConf;
+            #region module
+            OnlineModuleEntry.EnsureCache();
+            var spiderArgs = new OnlineSpiderModel(title, isanime);
 
-                send(animeConf.Kodik);
-                send(animeConf.AnimeLib);
-                send(animeConf.AnilibriaOnline, "anilibria");
-                send(animeConf.Animevost);
-                send(animeConf.Animebesst);
-                send(animeConf.MoonAnime);
-                send(animeConf.AnimeGo);
+            if (OnlineModuleEntry.Spiders != null && OnlineModuleEntry.Spiders.Count > 0)
+            {
+                foreach (var entry in OnlineModuleEntry.Spiders)
+                {
+                    try
+                    {
+                        var result = entry.Spider(HttpContext, requestInfo, host, spiderArgs);
+                        if (result == null || result.Count == 0)
+                            continue;
+
+                        foreach (var item in result)
+                            send(item.init, item.plugin);
+                    }
+                    catch (Exception ex)
+                    {
+                        Serilog.Log.Error(ex, "CatchId={CatchId}", "id_bd1de14c");
+                    }
+                }
             }
 
-            send(ModInit.premiumConf.Filmix);
-            send(ModInit.premiumConf.FilmixTV, "filmixtv");
-            send(ModInit.premiumConf.FilmixPartner, "fxapi");
+            if (OnlineModuleEntry.SpidersAsync != null && OnlineModuleEntry.SpidersAsync.Count > 0)
+            {
+                foreach (var entry in OnlineModuleEntry.SpidersAsync)
+                {
+                    try
+                    {
+                        var result = await entry.SpiderAsync(HttpContext, requestInfo, host, spiderArgs);
+                        if (result == null || result.Count == 0)
+                            continue;
 
+                        foreach (var item in result)
+                            send(item.init, item.plugin);
+                    }
+                    catch (Exception ex)
+                    {
+                        Serilog.Log.Error(ex, "CatchId={CatchId}", "id_tne6mp1q");
+                    }
+                }
+            }
+            #endregion
+
+            send(ModInit.siteConf.Filmix);
+            send(ModInit.siteConf.FilmixTV, "filmixtv");
+            send(ModInit.siteConf.FilmixPartner, "fxapi");
             send(ModInit.siteConf.Rezka);
-            send(ModInit.premiumConf.RezkaPrem, "rhsprem");
-
-            send(ModInit.premiumConf.KinoPub);
-            send(ModInit.siteConf.Kinogo);
-            send(ModInit.premiumConf.GetsTV, "getstv-search");
-            send(ModInit.siteConf.Kinobase);
-            send(ModInit.premiumConf.Alloha, "alloha-search");
-            send(ModInit.siteConf.Collaps, "collaps-search");
-            send(ModInit.siteConf.VeoVeo, "veoveo-spider");
-
-            if (!string.IsNullOrEmpty(ModInit.siteConf.VideoCDN.token))
-                send(ModInit.siteConf.VideoCDN);
-
-            if (ModInit.siteConf.Lumex.priorityBrowser == "http" || PlaywrightBrowser.Status != PlaywrightStatus.disabled)
-                send(ModInit.siteConf.Lumex);
-
-            send(ModInit.siteConf.VDBmovies);
-            send(ModInit.siteConf.HDVB, "hdvb-search");
+            send(ModInit.siteConf.RezkaPrem, "rhsprem");
+            send(ModInit.siteConf.KinoPub);
+            send(ModInit.siteConf.GetsTV, "getstv-search");
+            send(ModInit.siteConf.Alloha, "alloha-search");
 
             return Json(piders.OrderByDescending(i => i.index).ToDictionary(k => k.name, v => v.uri));
         }
@@ -626,53 +600,15 @@ namespace Online.Controllers
             #endregion
 
             var conf = ModInit.siteConf;
-            var animeConf = ModInit.animeConf;
-            var engConf = ModInit.engConf;
-            var premiumConf = ModInit.premiumConf;
+            var premiumConf = ModInit.siteConf;
 
             var user = requestInfo.user;
             JObject kitconf = loadKitConf();
 
-            #region modules
-            OnlineModuleEntry.EnsureCache();
-
-            if (OnlineModuleEntry.onlineModulesCache != null && OnlineModuleEntry.onlineModulesCache.Count > 0)
-            {
-                var args = new OnlineEventsModel(id, imdb_id, kinopoisk_id, title, original_title, original_language, year, source, rchtype, serial, life, islite, account_email, uid, token, nws_id, kitconf);
-
-                foreach (var entry in OnlineModuleEntry.onlineModulesCache)
-                {
-                    try
-                    {
-                        var result = entry.Invoke(HttpContext, memoryCache, requestInfo, host, args);
-                        if (result != null && result.Count > 0)
-                        {
-                            foreach (var r in result)
-                                online.Add((null, r.name, r.url, r.plugin, r.index));
-                        }
-
-                        result = await entry.InvokeAsync(HttpContext, memoryCache, requestInfo, host, args);
-                        if (result != null && result.Count > 0)
-                        {
-                            foreach (var r in result)
-                                online.Add((null, r.name, r.url, r.plugin, r.index));
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Serilog.Log.Error(ex, "CatchId={CatchId}", "id_a7376325");
-                    }
-                }
-            }
-            #endregion
-
             #region send
-            void send(BaseSettings _init, string plugin = null, string name = null, string arg_title = null, string arg_url = null, BaseSettings myinit = null)
+            void send(BaseSettings _init, string plugin = null, string name = null, string arg_title = null, string arg_url = null, BaseSettings myinit = null, string myurl = null)
             {
                 var init = myinit != null ? _init : loadKit(_init, kitconf);
-                bool enable = init.enable && !init.rip;
-                if (!enable)
-                    return;
 
                 if (rchtype != null)
                 {
@@ -728,6 +664,10 @@ namespace Online.Controllers
                         url = init.overridehosts[Random.Shared.Next(0, init.overridehosts.Length)];
                 }
 
+                bool enable = init.enable && !init.rip;
+                if (!enable && string.IsNullOrEmpty(url))
+                    return;
+
                 string displayname = init.displayname ?? name ?? init.plugin;
 
                 if (!string.IsNullOrEmpty(url))
@@ -740,13 +680,15 @@ namespace Online.Controllers
                 }
                 else
                 {
-                    url = "{localhost}/lite/" + (plugin ?? (init.plugin ?? name).ToLower()) + arg_url;
+                    url = !string.IsNullOrEmpty(myurl)
+                        ? url = "{localhost}/" + myurl + arg_url
+                        : url = "{localhost}/lite/" + (plugin ?? (init.plugin ?? name).ToLower()) + arg_url;
                 }
 
                 if (original_language != null && original_language.Split("|")[0] is "ru" or "ja" or "ko" or "zh" or "cn")
                 {
                     string _p = (plugin ?? (init.plugin ?? name).ToLower());
-                    if (_p is "filmix" or "filmixtv" or "fxapi" or "kinoukr" or "rezka" or "rhsprem" or "redheadsound" or "kinopub" or "alloha" or "lumex" or "vcdn" or "videocdn" or "fancdn" or "redheadsound" or "kinotochka" or "remux") // || (_p == "kodik" && kinopoisk_id == 0 && string.IsNullOrEmpty(imdb_id))
+                    if (_p is "filmix" or "filmixtv" or "fxapi" or "kinoukr" or "rezka" or "rhsprem" or "kinopub" or "alloha" or "fancdn" or "kinotochka" or "remux" or "kinogo" or "kinobase" or "getstv" or "leproduction") // || (_p == "kodik" && kinopoisk_id == 0 && string.IsNullOrEmpty(imdb_id))
                         url += (url.Contains("?") ? "&" : "?") + "clarification=1";
                 }
 
@@ -754,29 +696,56 @@ namespace Online.Controllers
             }
             #endregion
 
-            if (original_language != null && original_language.Split("|")[0] is "ja" or "ko" or "zh" or "cn" or "th" or "vi" or "tl")
-                send(animeConf.Kodik);
+            #region modules
+            OnlineModuleEntry.EnsureCache();
+            var moduleArgs = new OnlineEventsModel(id, imdb_id, kinopoisk_id, title, original_title, original_language, year, source, rchtype, serial, isanime, life, islite, account_email, uid, token, nws_id, kitconf);
 
-            if (serial == -1 || isanime)
+            if (OnlineModuleEntry.Modules != null && OnlineModuleEntry.Modules.Count > 0)
             {
-                send(animeConf.AniLiberty);
-                send(animeConf.AnilibriaOnline, "anilibria", "Anilibria");
-                send(animeConf.AnimeLib);
-                send(animeConf.Animevost);
-                send(animeConf.Animebesst);
-                send(animeConf.Dreamerscast);
-                send(animeConf.AnimeGo);
-                send(animeConf.AniMedia);
-
-                if (PlaywrightBrowser.Status != PlaywrightStatus.disabled || !string.IsNullOrEmpty(animeConf.MoonAnime.overridehost) || animeConf.MoonAnime.overridehosts?.Length > 0)
-                    send(animeConf.MoonAnime);
+                foreach (var entry in OnlineModuleEntry.Modules)
+                {
+                    try
+                    {
+                        var result = entry.Invoke(HttpContext, requestInfo, host, moduleArgs);
+                        if (result != null && result.Count > 0)
+                        {
+                            foreach (var r in result)
+                                send(r.init, r.plugin, r.name, r.arg_title, r.arg_url, r.myinit, r.myurl);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Serilog.Log.Error(ex, "CatchId={CatchId}", "id_a73m6i2y");
+                    }
+                }
             }
 
+            if (OnlineModuleEntry.ModulesAsync != null && OnlineModuleEntry.ModulesAsync.Count > 0)
+            {
+                foreach (var entry in OnlineModuleEntry.ModulesAsync)
+                {
+                    try
+                    {
+                        var result = await entry.InvokeAsync(HttpContext, requestInfo, host, moduleArgs);
+                        if (result != null && result.Count > 0)
+                        {
+                            foreach (var r in result)
+                                send(r.init, r.plugin, r.name, r.arg_title, r.arg_url, r.myinit, r.myurl);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Serilog.Log.Error(ex, "CatchId={CatchId}", "id_xnfe4pvc");
+                    }
+                }
+            }
+            #endregion
+
             #region VoKino
-            if (kinopoisk_id > 0 || source?.ToLower() == "vokino")
+            if (kinopoisk_id > 0 || (source != null && source.Equals("vokino", StringComparison.OrdinalIgnoreCase)))
             {
                 string vid = kinopoisk_id.ToString();
-                if (source?.ToLower() == "vokino" && !string.IsNullOrEmpty(id))
+                if ((source != null && source.Equals("vokino", StringComparison.OrdinalIgnoreCase)) && !string.IsNullOrEmpty(id))
                     vid = id;
 
                 var myinit = loadKit(premiumConf.VoKino, kitconf, (j, i, c) =>
@@ -801,14 +770,13 @@ namespace Online.Controllers
                             {
                                 view = await Http.Get<JObject>($"{myinit.host}/v2/view/{vid}?token={myinit.token}", timeoutSeconds: 4);
                                 if (view != null)
-                                    memoryCache.Set($"vokino:view:{vid}", view, cacheTimeBase(20, init: premiumConf.VoKino));
+                                    memoryCache.Set($"vokino:view:{vid}", view, cacheTimeBase(180, init: premiumConf.VoKino));
                             }
 
                             if (view != null && view.ContainsKey("online") && view["online"] is JObject onlineObj)
                                 VoKinoInvoke.SendOnline(myinit, online, onlineObj);
                         }
                     }
-                    ;
 
                     if (CoreInit.conf.accsdb.enable)
                     {
@@ -854,10 +822,6 @@ namespace Online.Controllers
             send(premiumConf.FilmixPartner, "fxapi", "Filmix");
             #endregion
 
-            send(premiumConf.KinoPub);
-            send(premiumConf.IptvOnline, "iptvonline", "iptv.online");
-            send(premiumConf.GetsTV);
-
             #region Alloha
             {
                 var myinit = loadKit(premiumConf.Alloha, kitconf, (j, i, c) =>
@@ -886,7 +850,7 @@ namespace Online.Controllers
 
             #region Rezka
             {
-                var myinit = loadKit(conf.Rezka, (j, i, c) =>
+                var myinit = loadKit(premiumConf.Rezka, (j, i, c) =>
                 {
                     if (j.ContainsKey("premium"))
                         i.premium = c.premium;
@@ -896,85 +860,6 @@ namespace Online.Controllers
                 send(myinit, myinit: myinit);
             }
             #endregion
-
-            if (PlaywrightBrowser.Status != PlaywrightStatus.disabled)
-                send(conf.Mirage);
-
-            if (PlaywrightBrowser.Status != PlaywrightStatus.disabled || !string.IsNullOrEmpty(conf.Kinobase.overridehost) || conf.Kinobase.overridehosts?.Length > 0)
-                send(conf.Kinobase);
-
-            if (conf.VDBmovies.rhub || conf.VDBmovies.priorityBrowser == "http" || PlaywrightBrowser.Status != PlaywrightStatus.disabled || !string.IsNullOrEmpty(conf.VDBmovies.overridehost) || conf.VDBmovies.overridehosts?.Length > 0)
-                send(conf.VDBmovies);
-
-            if (kinopoisk_id > 0)
-            {
-                if (conf.VideoDB.rhub || conf.VideoDB.priorityBrowser == "http" || PlaywrightBrowser.Status != PlaywrightStatus.disabled || !string.IsNullOrEmpty(conf.VideoDB.overridehost) || conf.VideoDB.overridehosts?.Length > 0)
-                    send(conf.VideoDB);
-            }
-
-            send(conf.VideoCDN);
-
-            if (conf.Lumex.priorityBrowser == "http" || PlaywrightBrowser.Status != PlaywrightStatus.disabled || !string.IsNullOrEmpty(conf.Lumex.overridehost) || conf.Lumex.overridehosts?.Length > 0)
-                send(conf.Lumex);
-
-            if ((serial == -1 || serial == 0) && kinopoisk_id > 0)
-                send(conf.FanCDN);
-
-            if (!isanime)
-                send(conf.FlixCDN);
-
-            if (PlaywrightBrowser.Status != PlaywrightStatus.disabled || !string.IsNullOrEmpty(conf.Kinogo.overridehost) || conf.Kinogo.overridehosts?.Length > 0)
-                send(conf.Kinogo);
-
-            if (KinoukrInvoke.KinoukrDb != null)
-            {
-                send(ModInit.ukrConf.Ashdi, "ashdi", "Ashdi (Украинский)");
-
-                if (!isanime)
-                    send(ModInit.ukrConf.Kinoukr, "kinoukr", "Kinoukr (Украинский)");
-            }
-
-            send(ModInit.ukrConf.Eneyida, "eneyida", "Eneyida (Украинский)");
-
-            if (kinopoisk_id > 0)
-                send(conf.CDNvideohub, "cdnvideohub", "VideoHUB");
-
-            if ((serial == -1 || serial == 0) && !isanime)
-                send(conf.LeProduction);
-
-            #region Collaps
-            {
-                var myinit = loadKit(conf.Collaps, kitconf, (j, i, c) =>
-                {
-                    if (j.ContainsKey("dash"))
-                        i.dash = c.dash;
-                    if (j.ContainsKey("two"))
-                        i.two = c.two;
-                    return i;
-                });
-
-                send(myinit, "collaps", $"Collaps ({(myinit.dash ? "DASH" : "HLS")})", myinit: myinit);
-
-                if (myinit.two && !myinit.dash)
-                    send(myinit, "collaps-dash", "Collaps (DASH)");
-            }
-            #endregion
-
-            if (serial == -1 || serial == 0)
-            {
-                send(conf.Plvideo, "plvideo", "Plvideo");
-                send(conf.RutubeMovie, "rutubemovie", "Rutube");
-                send(conf.VkMovie, "vkmovie", "VK Видео");
-            }
-
-            if (PlaywrightBrowser.Status != PlaywrightStatus.disabled || !string.IsNullOrEmpty(conf.Videoseed.overridehost) || conf.Videoseed.overridehosts?.Length > 0)
-                send(conf.Videoseed);
-
-            send(conf.Vibix);
-            send(conf.VeoVeo);
-
-            if (serial == -1 || serial == 0)
-                send(premiumConf.iRemux, "remux");
 
             #region PidTor
             if (ModInit.PidTor.enable)
@@ -997,62 +882,12 @@ namespace Online.Controllers
             }
             #endregion
 
-            if (serial == -1 || serial == 0)
-                send(conf.Redheadsound);
-
-            send(conf.HDVB);
-            send(conf.Kinotochka);
-
-            #region Грузинские
-            if (kinopoisk_id > 0 && !isanime)
-                send(conf.Kinoflix);
+            send(premiumConf.KinoPub);
+            send(premiumConf.IptvOnline, "iptvonline", "iptv.online");
+            send(premiumConf.GetsTV);
 
             if (serial == -1 || serial == 0)
-                send(conf.Geosaitebi);
-
-            if (serial == 1)
-                send(conf.AsiaGe);
-            #endregion
-
-            if ((serial == -1 || (serial == 1 && !isanime)) && kinopoisk_id > 0)
-                send(conf.CDNmovies);
-
-            #region ENG
-            if ((original_language == null || original_language == "en") && CoreInit.conf.disableEng == false)
-            {
-                if (tmdb_id > 0 || (source != null && (source is "tmdb" or "cub")))
-                {
-                    if (PlaywrightBrowser.Status != PlaywrightStatus.disabled || !string.IsNullOrEmpty(engConf.Hydraflix.overridehost) || engConf.Hydraflix.overridehosts?.Length > 0)
-                        send(engConf.Hydraflix, "hydraflix", "HydraFlix (ENG)");
-
-                    if (PlaywrightBrowser.Status != PlaywrightStatus.disabled || !string.IsNullOrEmpty(engConf.Vidsrc.overridehost) || engConf.Vidsrc.overridehosts?.Length > 0)
-                        send(engConf.Vidsrc, "vidsrc", "VidSrc (ENG)");
-
-                    if (PlaywrightBrowser.Status != PlaywrightStatus.disabled || !string.IsNullOrEmpty(engConf.VidLink.overridehost) || engConf.VidLink.overridehosts?.Length > 0)
-                        send(engConf.VidLink, "vidlink", "VidLink (ENG)");
-
-                    if (PlaywrightBrowser.Status != PlaywrightStatus.disabled || !string.IsNullOrEmpty(engConf.Videasy.overridehost) || engConf.Videasy.overridehosts?.Length > 0)
-                        send(engConf.Videasy, "videasy", "Videasy (ENG)");
-
-                    if (PlaywrightBrowser.Status != PlaywrightStatus.disabled || !string.IsNullOrEmpty(engConf.MovPI.overridehost) || engConf.MovPI.overridehosts?.Length > 0)
-                        send(engConf.MovPI, "movpi", "MovPI (ENG)");
-
-                    if (PlaywrightBrowser.Status != PlaywrightStatus.disabled || !string.IsNullOrEmpty(engConf.Smashystream.overridehost) || engConf.Smashystream.overridehosts?.Length > 0)
-                        send(engConf.Smashystream, "smashystream", "SmashyStream (ENG)");
-
-                    if (PlaywrightBrowser.Status != PlaywrightStatus.disabled || !string.IsNullOrEmpty(engConf.Autoembed.overridehost) || engConf.Autoembed.overridehosts?.Length > 0)
-                        send(engConf.Autoembed, "autoembed", "AutoEmbed (ENG)");
-
-                    if (PlaywrightBrowser.Status != PlaywrightStatus.disabled || !string.IsNullOrEmpty(engConf.Playembed.overridehost) || engConf.Playembed.overridehosts?.Length > 0)
-                        send(engConf.Playembed, "playembed", "PlayEmbed (ENG)");
-
-                    if (Firefox.Status != PlaywrightStatus.disabled || !string.IsNullOrEmpty(engConf.Twoembed.overridehost) || engConf.Twoembed.overridehosts?.Length > 0)
-                        send(engConf.Twoembed, "twoembed", "2Embed (ENG)");
-
-                    send(engConf.Rgshows, "rgshows", "RgShows (ENG)");
-                }
-            }
-            #endregion
+                send(premiumConf.iRemux, "remux");
 
             #region checkOnlineSearch
             if (ModInit.conf.checkOnlineSearch && !string.IsNullOrEmpty(id))
@@ -1068,7 +903,7 @@ namespace Online.Controllers
 
                     memoryCache.Set(memkey, links, DateTime.Now.AddMinutes(5));
 
-                    foreach (var o in online)
+                    foreach (var o in online.OrderBy(i => i.index))
                     {
                         var tk = checkSearch(memkey, links, tasks.Count, o.init, o.index, o.name, o.url, o.plugin, id, imdb_id, kinopoisk_id, tmdb_id, title, original_title, original_language, source, year, serial, life, rchtype);
                         tasks.Add(tk);
@@ -1152,9 +987,6 @@ namespace Online.Controllers
                             string rezkaq = init.premium ? " ~ 2160p" : " ~ 720p";
                             quality = string.IsNullOrEmpty(quality) ? rezkaq : quality;
                         }
-
-                        if (balanser == "collaps")
-                            quality = init.dash ? " ~ 1080p" : " ~ 720p";
                     }
 
                     if (quality == string.Empty)
@@ -1172,81 +1004,34 @@ namespace Online.Controllers
                             case "remux":
                             case "pidtor":
                             case "rhsprem":
-                            case "animelib":
-                            case "mirage":
-                            case "videodb":
                             case "iptvonline":
-                            case "plvideo":
-                            case "rutubemovie":
-                            case "vkmovie":
-                            case "cdnvideohub":
                                 quality = " ~ 2160p";
                                 break;
-                            case "kinobase":
-                            case "kinogo":
                             case "getstv":
-                            case "zetflix":
-                            case "vcdn":
-                            case "videocdn":
-                            case "lumex":
-                            case "vibix":
-                            case "videoseed":
-                            case "eneyida":
-                            case "kinoukr":
-                            case "ashdi":
-                            case "hdvb":
-                            case "anilibria":
-                            case "aniliberty":
-                            case "redheadsound":
-                            case "iframevideo":
-                            case "animego":
-                            case "lostfilmhd":
-                            case "vdbmovies":
-                            case "collaps-dash":
-                            case "fancdn":
-                            case "moonanime":
-                            case "playembed":
-                            case "rgshows":
-                            case "twoembed":
-                            case "vidsrc":
-                            case "smashystream":
-                            case "hydraflix":
-                            case "movpi":
-                            case "videasy":
-                            case "vidlink":
-                            case "autoembed":
-                            case "veoveo":
                             case "vokino-vibix":
                             case "vokino-monframe":
                             case "vokino-remux":
                             case "vokino-ashdi":
                             case "vokino-hdvb":
-                            case "flixcdn":
-                            case "kinoflix":
-                            case "dreamerscast":
-                            case "leproduction":
-                            case "asiage":
                                 quality = " ~ 1080p";
                                 break;
-                            case "voidboost":
-                            case "animedia":
-                            case "animevost":
-                            case "animebesst":
-                            case "kodik":
-                            case "kinotochka":
                             case "rhs":
-                            case "geosaitebi":
                                 quality = " ~ 720p";
                                 break;
-                            case "kinokrad":
-                            case "kinoprofi":
-                            case "seasonvar":
-                                quality = " - 480p";
-                                break;
-                            case "cdnmovies":
-                                quality = " - 360p";
-                                break;
                             default:
+                                if (EventListener.OnlineApiQuality != null)
+                                {
+                                    var em = new EventOnlineApiQuality(balanser);
+                                    foreach (Func<EventOnlineApiQuality, string> handler in EventListener.OnlineApiQuality.GetInvocationList())
+                                    {
+                                        string eventQuality = handler.Invoke(em);
+                                        if (eventQuality != null)
+                                        {
+                                            quality = eventQuality;
+                                            break;
+                                        }
+                                    }
+                                }
                                 break;
                         }
 

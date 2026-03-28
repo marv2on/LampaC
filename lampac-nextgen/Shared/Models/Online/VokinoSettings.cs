@@ -1,15 +1,12 @@
-﻿using Shared.Models.Base;
-using Shared.Models.Online.VoKino;
+﻿using Shared.Models.Online.VoKino;
 
 namespace Shared.Models.Online.Settings
 {
     public class VokinoSettings : BaseSettings, ICloneable
     {
-        public VokinoSettings(string plugin, string host, bool streamproxy, bool rip = false)
+        public VokinoSettings(string plugin, string host)
         {
-            this.streamproxy = streamproxy;
             this.plugin = plugin;
-            this.rip = rip;
 
             if (host != null)
                 this.host = host.StartsWith("http") ? host : Decrypt(host);

@@ -163,9 +163,14 @@ namespace Shared
 
             if (EventListener.BadInitialization != null)
             {
-                badInitMsg = await EventListener.BadInitialization.Invoke(new EventBadInitialization(init, rch, requestInfo, host, HttpContext.Request, HttpContext, hybridCache));
-                if (badInitMsg != null)
-                    return true;
+                var em = new EventBadInitialization(init, rch, requestInfo, host, HttpContext.Request, HttpContext);
+
+                foreach (Func<EventBadInitialization, Task<ActionResult>> handler in EventListener.BadInitialization.GetInvocationList())
+                {
+                    badInitMsg = await handler(em);
+                    if (badInitMsg != null)
+                        return true;
+                }
             }
 
             if (NoAccessGroup(init, out string error_msg))

@@ -9,7 +9,7 @@ namespace Online.Controllers
     public class PiTor : BaseOnlineController
     {
         [HttpGet]
-        [Staticache(1)]
+        [Staticache]
         [Route("lite/pidtor")]
         async public Task<ActionResult> Index(string title, string original_title, int year, string original_language, int serial, int s = -1, bool rjson = false)
         {
@@ -20,7 +20,7 @@ namespace Online.Controllers
             if (NoAccessGroup(init, out string error_msg))
                 return Json(new { accsdb = true, error_msg });
 
-            var cache = await InvokeCacheResult<List<Torrent>>($"pidtor:{title}:{original_title}:{year}:{original_language}:{serial}", 5, textJson: true, onget: async e =>
+            var cache = await InvokeCacheResult<List<Torrent>>($"pidtor:{title}:{original_title}:{year}:{original_language}:{serial}", 40, textJson: true, onget: async e =>
             {
                 string uri = $"{init.redapi}/api/v2.0/indexers/all/results?title={HttpUtility.UrlEncode(title)}&title_original={HttpUtility.UrlEncode(original_title)}&year={year}&is_serial={(original_language == "ja" ? 5 : (serial + 1))}&apikey={init.apikey}";
 
@@ -301,7 +301,7 @@ namespace Online.Controllers
                             if (torrent?.torrent?.info?.seasons == null || torrent.torrent.info.seasons.Length == 0)
                                 continue;
 
-                            if (!torrent.torrent.info.seasons.Contains(s) || torrent.torrent.info.seasons.Length != 1) // многосезонный 
+                            if (!torrent.torrent.info.seasons.Contains(s) || torrent.torrent.info.seasons.Length != 1) // многосезонный
                                 continue;
 
                             string hashmagnet = Regex.Match(torrent.magnet, "magnet:\\?xt=urn:btih:([a-zA-Z0-9]+)").Groups[1].Value.ToLower();
@@ -334,7 +334,7 @@ namespace Online.Controllers
 
 
         [HttpGet]
-        [Staticache(1)]
+        [Staticache]
         [Route("lite/pidtor/serial/{id}")]
         async public Task<ActionResult> Serial(string id, string title, string original_title, int s)
         {

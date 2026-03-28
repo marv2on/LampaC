@@ -1,7 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Shared.Models.Events;
 using Shared.Models.Module;
@@ -88,7 +87,11 @@ namespace SISI
 
             if (EventListener.AppReplace != null)
             {
-                string source = EventListener.AppReplace.Invoke("sisi", new EventAppReplace(cache.file, token, null, host, requestInfo, HttpContext.Request, hybridCache));
+                string source = cache.file;
+
+                foreach (Func<string, EventAppReplace, string> handler in EventListener.AppReplace.GetInvocationList())
+                    source = handler.Invoke("sisi", new EventAppReplace(source, token, null, host, requestInfo, HttpContext.Request));
+
                 return Content(source.Replace("{token}", HttpUtility.UrlEncode(token)), "application/javascript; charset=utf-8");
             }
 
@@ -124,40 +127,13 @@ namespace SISI
             if (kitconf != null && kitconf.Value<bool?>("lgbt") == false)
                 lgbt = false;
 
-            var channels = new List<ChannelItem>(appConf.NextHUB ? 50 : 20)
+            var channels = new List<ChannelItem>(50)
             {
                 new ChannelItem("Закладки", $"{host}/sisi/bookmarks", 0)
             };
 
             if (ModInit.conf.history.enable)
                 channels.Add(new ChannelItem("История", $"{host}/sisi/historys", 1));
-
-            #region modules
-            SisiModuleEntry.EnsureCache();
-
-            if (SisiModuleEntry.sisiModulesCache != null && SisiModuleEntry.sisiModulesCache.Count > 0)
-            {
-                var args = new SisiEventsModel(rchtype, account_email, uid, token);
-
-                foreach (var entry in SisiModuleEntry.sisiModulesCache)
-                {
-                    try
-                    {
-                        var result = entry.Invoke(HttpContext, memoryCache, requestInfo, host, args);
-                        if (result != null && result.Count > 0)
-                            channels.AddRange(result);
-
-                        result = await entry.InvokeAsync(HttpContext, memoryCache, requestInfo, host, args);
-                        if (result != null && result.Count > 0)
-                            channels.AddRange(result);
-                    }
-                    catch (Exception ex)
-                    {
-                        Serilog.Log.Error(ex, "CatchId={CatchId}", "id_f9c9ebce");
-                    }
-                }
-            }
-            #endregion
 
             #region send
             void send(string name, BaseSettings _init, string plugin = null, int displayindex = -1, BaseSettings myinit = null)
@@ -233,45 +209,46 @@ namespace SISI
             }
             #endregion
 
-            #region NextHUB
-            if (ModInit.conf.NextHUB && Directory.Exists($"{ModInit.modpath}/NextHUB/sites"))
+            #region modules
+            SisiModuleEntry.EnsureCache();
+            var args = new SisiEventsModel(rchtype, account_email, uid, token);
+
+            if (SisiModuleEntry.Modules != null && SisiModuleEntry.Modules.Count > 0)
             {
-                foreach (string inFile in Directory.GetFiles($"{ModInit.modpath}/NextHUB/sites", "*.yaml"))
+                foreach (var entry in SisiModuleEntry.Modules)
                 {
                     try
                     {
-                        if (inFile.Contains(".my."))
-                            continue;
-
-                        string plugin = Path.GetFileNameWithoutExtension(inFile);
-                        if (!lgbt && plugin == "gayporntube")
-                            continue;
-
-                        var init = NextHUB.Controllers.Root.goInit(plugin);
-                        if (init == null)
-                            continue;
-
-                        if (init.debug)
-                            Console.WriteLine("\n" + JsonConvert.SerializeObject(init, Formatting.Indented));
-
-                        init = loadKit(init);
-
-                        if (PlaywrightBrowser.Status == PlaywrightStatus.disabled || init.rhub)
+                        var result = entry.Invoke(HttpContext, requestInfo, host, args);
+                        if (result != null && result.Count > 0)
                         {
-                            if (init.priorityBrowser != "http" || (init.view != null && init.view.viewsource == false))
-                                continue;
+                            foreach (var item in result)
+                                send(item.name, item.init, item.plugin, item.displayindex, item.myinit);
                         }
-
-                        send(Regex.Replace(init.host, "^https?://", ""), init, $"nexthub?plugin={CrypTo.EncryptQuery(plugin)}", myinit: init);
-                    }
-                    catch (YamlDotNet.Core.YamlException ex)
-                    {
-                        Console.WriteLine($"\nОшибка: {ex.Message}\nфайл: {Path.GetFileName(inFile)}\nстрока: {ex.Start.Line}");
                     }
                     catch (Exception ex)
                     {
-                        Serilog.Log.Error(ex, "CatchId={CatchId}", "id_852ccf67");
-                        Console.WriteLine($"NextHUB: error DeserializeObject {inFile}\n {ex.Message}");
+                        Serilog.Log.Error(ex, "CatchId={CatchId}", "id_f9c9ebce");
+                    }
+                }
+            }
+
+            if (SisiModuleEntry.ModulesAsync != null && SisiModuleEntry.ModulesAsync.Count > 0)
+            {
+                foreach (var entry in SisiModuleEntry.ModulesAsync)
+                {
+                    try
+                    {
+                        var result = await entry.InvokeAsync(HttpContext, requestInfo, host, args);
+                        if (result != null && result.Count > 0)
+                        {
+                            foreach (var item in result)
+                                send(item.name, item.init, item.plugin, item.displayindex, item.myinit);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Serilog.Log.Error(ex, "CatchId={CatchId}", "id_g7b1zx6i");
                     }
                 }
             }

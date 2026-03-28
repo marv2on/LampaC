@@ -1,6 +1,6 @@
 ﻿using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Caching.Memory;
 using Shared.Models.Events;
+using System;
 using System.Threading.Tasks;
 
 namespace Core.Middlewares
@@ -8,21 +8,24 @@ namespace Core.Middlewares
     public class Module
     {
         private readonly RequestDelegate _next;
-        IMemoryCache memoryCache;
         private readonly bool first;
 
-        public Module(RequestDelegate next, IMemoryCache mem, bool first)
+        public Module(RequestDelegate next, bool first)
         {
             _next = next;
-            memoryCache = mem;
             this.first = first;
         }
 
         async public Task InvokeAsync(HttpContext httpContext)
         {
-            bool next = await EventListener.Middleware.Invoke(first, new EventMiddleware(first, httpContext, memoryCache));
-            if (!next)
-                return;
+            var middlewareEvent = new EventMiddleware(first, httpContext);
+
+            foreach (Func<bool, EventMiddleware, Task<bool>> handler in EventListener.Middleware.GetInvocationList())
+            {
+                bool next = await handler(first, middlewareEvent);
+                if (!next)
+                    return;
+            }
 
             await _next(httpContext);
         }

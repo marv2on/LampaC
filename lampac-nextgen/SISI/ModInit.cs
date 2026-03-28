@@ -39,13 +39,17 @@ namespace SISI
             SisiContext.Initialization(baseconf.app.ApplicationServices);
         }
 
+        public void Dispose()
+        {
+            EventListener.UpdateInitFile -= updateConf;
+        }
+
         void updateConf()
         {
             conf = ModuleInvoke.Init("sisi", new ModuleConf()
             {
                 spider = true,
                 lgbt = true,
-                NextHUB = true,
                 component = "sisi",
                 iconame = "",
                 push_all = true,
@@ -53,7 +57,6 @@ namespace SISI
                 history = new HistoryConf() { enable = true, days = 30 },
                 limit_map = new List<WafLimitRootMap>
                 {
-                    new("^/nexthub", new WafLimitMap { limit = 5, second = 1, queryIds = ["plugin"] }),
                     new("^/(sisi|bgs|chu|runetki|elo|epr|hqr|phub|ptx|sbg|tizam|xmr|xnx|xds)", new WafLimitMap { limit = 5, second = 1, pathId = true })
                 }
             });
@@ -88,10 +91,6 @@ namespace SISI
             {
                 Volatile.Write(ref _updatingDb, 0);
             }
-        }
-
-        public void Dispose()
-        {
         }
     }
 }

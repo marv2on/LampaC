@@ -18,6 +18,8 @@ namespace TorrServer
     public class ModInit : IModuleLoaded
     {
         #region static
+        public static string modpath;
+        public static ModuleConf conf;
         static readonly Serilog.ILogger Log = Serilog.Log.ForContext<ModInit>();
 
         static bool IsShutdown;
@@ -32,9 +34,6 @@ namespace TorrServer
 
         public static Process tsprocess;
         #endregion
-
-        public static string modpath;
-        public static ModuleConf conf;
 
         #region loaded
         public void Loaded(InitspaceModel baseconf)
@@ -194,20 +193,7 @@ namespace TorrServer
         }
         #endregion
 
-        void updateConf()
-        {
-            conf = ModuleInvoke.Init("TorrServer", new ModuleConf()
-            {
-                releases = "MatriX.135",
-                defaultPasswd = "ts",
-                checkfile = true,
-                limit_map = new List<WafLimitRootMap>()
-                {
-                    new("^/ts/", new WafLimitMap { limit = 50, second = 1 })
-                }
-            });
-        }
-
+        #region Dispose
         public void Dispose()
         {
             try
@@ -221,6 +207,21 @@ namespace TorrServer
             }
 
             EventListener.UpdateInitFile -= updateConf;
+        }
+        #endregion
+
+        void updateConf()
+        {
+            conf = ModuleInvoke.Init("TorrServer", new ModuleConf()
+            {
+                releases = "MatriX.135",
+                defaultPasswd = "ts",
+                checkfile = true,
+                limit_map = new List<WafLimitRootMap>()
+                {
+                    new("^/ts/", new WafLimitMap { limit = 50, second = 1 })
+                }
+            });
         }
     }
 }

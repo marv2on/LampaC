@@ -18,7 +18,7 @@ namespace SISI.Controllers
         }
 
         [HttpGet]
-        [Staticache(11)]
+        [Staticache]
         [Route("xnx")]
         async public Task<ActionResult> Index(string search, int pg = 1)
         {
@@ -26,7 +26,7 @@ namespace SISI.Controllers
                 return badInitMsg;
 
             rhubFallback:
-            var cache = await InvokeCacheResult(ipkey($"xnx:list:{search}:{pg}"), 10, jsonContext.ListPlaylistItem, async e =>
+            var cache = await InvokeCacheResult($"xnx:list:{search}:{pg}", 10, jsonContext.ListPlaylistItem, async e =>
             {
                 List<PlaylistItem> playlists = null;
 
@@ -53,7 +53,7 @@ namespace SISI.Controllers
         }
 
         [HttpGet]
-        [Staticache(1)]
+        [Staticache]
         [Route("xnx/vidosik")]
         async public Task<ActionResult> Index(string uri, bool related)
         {

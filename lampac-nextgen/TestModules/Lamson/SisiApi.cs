@@ -1,29 +1,26 @@
 ﻿using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Caching.Memory;
 using Shared.Models.Base;
 using Shared.Models.Module;
 using Shared.Models.Module.Interfaces;
-using Shared.Models.SISI.Base;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace Lamson
 {
-    public class SisiApi : IModuleSisi
+    public class SisiApi : IModuleSisi, IModuleSisiAsync
     {
-        public List<ChannelItem> Invoke(HttpContext httpContext, IMemoryCache memoryCache, RequestModel requestInfo, string host, SisiEventsModel args)
+        public List<SisiModuleItem> Invoke(HttpContext httpContext, RequestModel requestInfo, string host, SisiEventsModel args)
         {
-            return new List<ChannelItem>()
+            return new List<SisiModuleItem>()
             {
-                new ChannelItem("PornGram", $"{host}/porngram", 1),
-                //new ChannelItem("TwoPorn", $"{host}/twoporn")
+                new SisiModuleItem("PornGram", new BaseSettings() { enable = true }, "porngram", 1)
             };
         }
 
 
-        async public Task<List<ChannelItem>> InvokeAsync(HttpContext httpContext, IMemoryCache memoryCache, RequestModel requestInfo, string host, SisiEventsModel args)
+        public Task<List<SisiModuleItem>> InvokeAsync(HttpContext httpContext, RequestModel requestInfo, string host, SisiEventsModel args)
         {
-            return null;
+            return Task.FromResult(default(List<SisiModuleItem>));
         }
     }
 }

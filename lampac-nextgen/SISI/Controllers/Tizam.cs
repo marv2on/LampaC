@@ -20,7 +20,7 @@ namespace SISI.Controllers
         }
 
         [HttpGet]
-        [Staticache(61)]
+        [Staticache]
         [Route("tizam")]
         async public Task<ActionResult> Index(string search, int pg = 1)
         {
@@ -59,7 +59,7 @@ namespace SISI.Controllers
         }
 
         [HttpGet]
-        [Staticache(181)]
+        [Staticache]
         [Route("tizam/vidosik")]
         async public Task<ActionResult> Index(string uri)
         {

@@ -12,7 +12,6 @@ using System.Runtime.Loader;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Web;
-using System.Text.Json;
 
 namespace Shared.Services
 {
@@ -113,7 +112,7 @@ namespace Shared.Services
         {
             lock (lockCompilationObj)
             {
-                string path = Path.Combine(AppContext.BaseDirectory, mod.path, mod.name);
+                string path = mod.path;
 
                 if (Directory.Exists(path))
                 {
@@ -121,16 +120,37 @@ namespace Shared.Services
                     var syntaxTree = new List<SyntaxTree>();
                     var parseOptions = new CSharpParseOptions(LanguageVersion.Latest);
 
-                    foreach (string file in Directory.GetFiles(path, "*.cs", SearchOption.AllDirectories))
-                    {
-                        string _file = file.Replace("\\", "/").Replace(path.Replace("\\", "/"), "").Replace(AppContext.BaseDirectory.Replace("\\", "/"), "");
-                        if (Regex.IsMatch(_file, "(\\.vs|bin|obj|Properties)/", RegexOptions.IgnoreCase))
-                            continue;
+                    List<string> syntaxPaths = new();
 
-                        using (var fileStream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: PoolInvk.bufferSize, options: FileOptions.Asynchronous))
+                    foreach (string csfile in Directory.GetFiles(path, "*.cs", SearchOption.AllDirectories))
+                    {
+                        string _file = csfile.Replace("\\", "/").Replace(path.Replace("\\", "/"), "").Replace(AppContext.BaseDirectory.Replace("\\", "/"), "");
+                        if (!Regex.IsMatch(_file, "(\\.vs|bin|obj|Properties)/", RegexOptions.IgnoreCase))
+                            syntaxPaths.Add(csfile);
+                    }
+
+                    if (mod.syntaxPaths != null)
+                    {
+                        foreach (string sp in mod.syntaxPaths)
+                        {
+                            string cspath = Path.GetFullPath(Path.Combine(path, sp));
+
+                            if (sp.EndsWith(".cs"))
+                                syntaxPaths.Add(cspath);
+                            else
+                            {
+                                foreach (string csfile in Directory.GetFiles(cspath, "*.cs", SearchOption.AllDirectories))
+                                    syntaxPaths.Add(csfile);
+                            }
+                        }
+                    }
+
+                    foreach (string csfile in syntaxPaths)
+                    {
+                        using (var fileStream = new FileStream(csfile, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: PoolInvk.bufferSize, options: FileOptions.Asynchronous))
                         {
                             var sourceText = SourceText.From(fileStream, Encoding.UTF8);
-                            syntaxTree.Add(CSharpSyntaxTree.ParseText(sourceText, parseOptions, file));
+                            syntaxTree.Add(CSharpSyntaxTree.ParseText(sourceText, parseOptions, csfile));
                         }
                     }
                     #endregion
@@ -140,7 +160,7 @@ namespace Shared.Services
                     {
                         foreach (string refns in mod.references)
                         {
-                            string dlrns = Path.Combine(AppContext.BaseDirectory, mod.path, mod.name, refns);
+                            string dlrns = Path.Combine(AppContext.BaseDirectory, mod.path, refns);
 
                             if (refns.EndsWith("/"))
                             {
@@ -181,52 +201,11 @@ namespace Shared.Services
                     }
                     #endregion
 
-                    var (generatorAssembly, generatorAssemblyPath) = EnsureRuntimeGeneratorReferences();
                     var compilation = CSharpCompilation.Create(mod.name, syntaxTree, references: appReferences, options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-
-                    #region JsonSourceGenerator
-                    var generatorType = generatorAssembly?.GetType("System.Text.Json.SourceGeneration.JsonSourceGenerator", throwOnError: false, ignoreCase: false);
-
-                    var generators = new List<ISourceGenerator>();
-                    if (generatorType != null && Activator.CreateInstance(generatorType) is object generatorInstance)
-                    {
-                        if (generatorInstance is ISourceGenerator sourceGenerator)
-                            generators.Add(sourceGenerator);
-                        else if (generatorInstance is IIncrementalGenerator incrementalGenerator)
-                            generators.Add(incrementalGenerator.AsSourceGenerator());
-                    }
-
-                    Compilation updatedCompilation = compilation;
-
-                    if (generators.Count > 0)
-                    {
-                        GeneratorDriver driver = CSharpGeneratorDriver.Create(generators, parseOptions: parseOptions);
-                        driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var generatorDiagnostics);
-                        updatedCompilation = outputCompilation;
-
-                        var runResult = driver.GetRunResult();
-
-                        foreach (var diagnostic in generatorDiagnostics)
-                            Console.WriteLine($"[{mod.name}][JsonSourceGenerator][driver] {diagnostic}");
-
-                        foreach (var diagnostic in runResult.Diagnostics)
-                            Console.WriteLine($"[{mod.name}][JsonSourceGenerator][run] {diagnostic}");
-
-                        foreach (var result in runResult.Results)
-                        {
-                            if (result.GeneratedSources.Length > 0)
-                            {
-                                Console.WriteLine($"[{mod.name}][JsonSourceGenerator][{result.Generator.GetType().FullName}] generated: {result.GeneratedSources.Length}");
-                                foreach (var diagnostic in result.Diagnostics)
-                                    Console.WriteLine($"[{mod.name}][JsonSourceGenerator][{result.Generator.GetType().FullName}] {diagnostic}");
-                            }
-                        }
-                    }
-                    #endregion
 
                     using (var ms = PoolInvk.msm.GetStream())
                     {
-                        var result = updatedCompilation.Emit(ms);
+                        var result = compilation.Emit(ms);
 
                         if (result.Success)
                         {
@@ -253,78 +232,6 @@ namespace Shared.Services
 
                 return default;
             }
-        }
-        #endregion
-
-        #region JsonSourceGenerator
-        static bool HasReference(string assemblyPath)
-            => appReferences.Any(r => string.Equals(r.FilePath, assemblyPath, StringComparison.OrdinalIgnoreCase));
-
-        static string FindJsonGeneratorAssemblyPath()
-        {
-            var loadedAssemblyPath = AppDomain.CurrentDomain
-                .GetAssemblies()
-                .FirstOrDefault(a => string.Equals(a.GetName().Name, "System.Text.Json.SourceGeneration", StringComparison.OrdinalIgnoreCase))
-                ?.Location;
-
-            if (!string.IsNullOrEmpty(loadedAssemblyPath) && File.Exists(loadedAssemblyPath))
-                return loadedAssemblyPath;
-
-            string dotnetRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT");
-            if (string.IsNullOrEmpty(dotnetRoot))
-            {
-                var runtimeDir = Path.GetDirectoryName(typeof(object).Assembly.Location);
-                dotnetRoot = Path.GetFullPath(Path.Combine(runtimeDir, "..", "..", ".."));
-            }
-
-            var packsPath = Path.Combine(dotnetRoot, "packs", "Microsoft.NETCore.App.Ref");
-            if (!Directory.Exists(packsPath))
-                return null;
-
-            var generatorPath = Directory.GetDirectories(packsPath).Select(versionDir => new
-            {
-                Path = versionDir,
-                Version = Version.TryParse(Path.GetFileName(versionDir), out var parsedVersion)
-                        ? parsedVersion
-                        : new Version(0, 0)
-            })
-                .OrderByDescending(versionDir => versionDir.Version)
-                .Select(versionDir => Path.Combine(versionDir.Path, "analyzers", "dotnet", "cs", "System.Text.Json.SourceGeneration.dll"))
-                .FirstOrDefault(File.Exists);
-
-            return generatorPath;
-        }
-
-        static (Assembly generatorAssembly, string generatorAssemblyPath) EnsureRuntimeGeneratorReferences()
-        {
-            var jsonAssemblyPath = typeof(JsonSerializer).Assembly.Location;
-            if (!string.IsNullOrEmpty(jsonAssemblyPath) && !HasReference(jsonAssemblyPath))
-                appReferences.Add(MetadataReference.CreateFromFile(jsonAssemblyPath));
-
-            var generatorAssemblyPath = FindJsonGeneratorAssemblyPath();
-            Assembly generatorAssembly = null;
-
-            if (!string.IsNullOrEmpty(generatorAssemblyPath))
-            {
-                generatorAssembly = AppDomain.CurrentDomain
-                    .GetAssemblies()
-                    .FirstOrDefault(a => string.Equals(a.Location, generatorAssemblyPath, StringComparison.OrdinalIgnoreCase));
-
-                if (generatorAssembly == null)
-                {
-                    try
-                    {
-                        generatorAssembly = Assembly.LoadFrom(generatorAssemblyPath);
-                    }
-                    catch (System.Exception ex)
-                    {
-                        Serilog.Log.Error(ex, "{Class} {CatchId}", "CSharpEval", "id_puhbziqk");
-                    }
-                }
-
-            }
-
-            return (generatorAssembly, generatorAssemblyPath);
         }
         #endregion
     }

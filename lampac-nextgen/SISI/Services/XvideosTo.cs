@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Caching.Memory;
-using Newtonsoft.Json.Linq;
 using Shared.Services.Pools;
 using Shared.Services.RxEnumerate;
 using SISI.Models.Xvideos;
@@ -122,7 +121,7 @@ namespace SISI.Services
         #endregion
 
         #region Pornstars
-        async public static Task<List<PlaylistItem>> Pornstars(string uri_video, string uri_star, string host, string plugin, string uri, string sort, int pg, Func<string, Task<JObject>> onresult)
+        async public static Task<List<PlaylistItem>> Pornstars(string uri_video, string uri_star, string host, string plugin, string uri, string sort, int pg, Func<string, Task<PornstarsRoot>> onresult)
         {
             if (string.IsNullOrEmpty(uri))
                 return null;
@@ -132,13 +131,13 @@ namespace SISI.Services
 
             url += $"/{pg}";
 
-            JObject jsonObj = await onresult.Invoke(url);
-            if (jsonObj == null || !jsonObj.ContainsKey("videos"))
+            PornstarsRoot root = await onresult.Invoke(url);
+            if (root?.videos == null)
                 return null;
 
             try
             {
-                var videos = jsonObj["videos"]?.ToObject<List<Related>>();
+                var videos = root.videos;
                 if (videos == null)
                     return null;
 

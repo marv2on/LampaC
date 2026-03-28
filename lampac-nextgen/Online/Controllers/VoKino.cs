@@ -10,7 +10,7 @@ namespace Online.Controllers
     {
         static readonly HttpClient httpClient = FriendlyHttp.CreateHttpClient();
 
-        public VoKino() : base(ModInit.premiumConf.VoKino)
+        public VoKino() : base(ModInit.siteConf.VoKino)
         {
             requestInitialization += () =>
             {

@@ -169,6 +169,7 @@ namespace Core.Controllers
                 memoryCache = memoryCache.GetCurrentStatistics().CurrentEntryCount,
                 HybridFileCache = HybridFileCache.Stat_ContTempDb,
                 SemaphorManager = SemaphorManager.Stat_ContSemaphoreLocks,
+                Staticache = Staticache.cacheFiles.Count,
                 ProxyLink = ProxyLink.Stat_ContLinks,
                 ProxyAPI = ProxyAPI.Stat_ContCacheFiles,
                 ProxyImg = ProxyImg.Stat_ContCacheFiles,

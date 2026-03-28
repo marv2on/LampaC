@@ -11,7 +11,7 @@ namespace Online.Controllers
 
         iRemuxInvoke oninvk;
 
-        public iRemux() : base(ModInit.premiumConf.iRemux)
+        public iRemux() : base(ModInit.siteConf.iRemux)
         {
             requestInitializationAsync = async () =>
             {
@@ -27,7 +27,7 @@ namespace Online.Controllers
         }
 
         [HttpGet]
-        [Staticache(1)]
+        [Staticache]
         [Route("lite/remux")]
         async public Task<ActionResult> Index(string title, string original_title, int year, string href, bool rjson = false)
         {
@@ -52,7 +52,7 @@ namespace Online.Controllers
 
 
         [HttpGet]
-        [Staticache(1)]
+        [Staticache]
         [Route("lite/remux/movie")]
         async public Task<ActionResult> Movie(string linkid, string quality, string title, string original_title)
         {

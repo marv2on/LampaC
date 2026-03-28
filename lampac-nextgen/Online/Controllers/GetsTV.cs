@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Online.Models.GetsTV;
 using Shared.Attributes;
 using System.Net.Http;
 using System.Text;
@@ -13,7 +14,7 @@ namespace Online.Controllers
         List<HeadersModel> bearer;
         static readonly HttpClient httpClient = FriendlyHttp.CreateHttpClient();
 
-        public GetsTV() : base(ModInit.premiumConf.GetsTV)
+        public GetsTV() : base(ModInit.siteConf.GetsTV)
         {
             requestInitialization += () =>
             {
@@ -60,7 +61,7 @@ namespace Online.Controllers
         #endregion
 
         [HttpGet]
-        [Staticache(1)]
+        [Staticache]
         [Route("lite/getstv")]
         async public Task<ActionResult> Index(string orid, string title, string original_title, int year, int t = -1, int s = -1, bool rjson = false, bool similar = false, string source = null, string id = null)
         {
@@ -82,16 +83,16 @@ namespace Online.Controllers
                 else
                 {
                     if (result.similar == null || result.similar.IsEmpty)
-                        return OnError("data");
+                        return OnError("similar");
 
                     return ContentTpl(result.similar);
                 }
             }
 
         rhubFallback:
-            var cache = await InvokeCacheResult<JObject>($"getstv:movies:{orid}", 20, async e =>
+            var cache = await InvokeCacheResult<MovieDetailsRoot>($"getstv:movies:{orid}", 40, async e =>
             {
-                var root = await httpHydra.Get<JObject>($"{init.host}/api/movies/{orid}",
+                var root = await httpHydra.Get<MovieDetailsRoot>($"{init.host}/api/movies/{orid}",
                     addheaders: bearer,
                     safety: true
                 );
@@ -109,17 +110,17 @@ namespace Online.Controllers
             {
                 string defaultargs = $"&orid={orid}&title={HttpUtility.UrlEncode(title)}&original_title={HttpUtility.UrlEncode(original_title)}&year={year}";
 
-                if (cache.Value.Value<string>("type") == "movie")
+                if (cache.Value.type == "movie")
                 {
                     #region Фильм
                     var mtpl = new MovieTpl(title, original_title);
 
-                    foreach (var media in cache.Value["media"])
+                    foreach (var media in cache.Value.media)
                     {
-                        string link = $"{host}/lite/getstv/video.m3u8?id={media.Value<string>("_id")}";
+                        string link = $"{host}/lite/getstv/video.m3u8?id={media._id}";
                         string streamlink = accsArgs($"{link}&play=true");
 
-                        mtpl.Append(media.Value<string>("trName"), link, "call", streamlink, details: media.Value<string>("sourceType"));
+                        mtpl.Append(media.trName, link, "call", streamlink, details: media.sourceType);
                     }
 
                     return mtpl;
@@ -132,9 +133,9 @@ namespace Online.Controllers
                     {
                         var tpl = new SeasonTpl();
 
-                        foreach (var season in cache.Value["seasons"])
+                        foreach (var season in cache.Value.seasons)
                         {
-                            int seasonNum = season.Value<int>("seasonNum");
+                            int seasonNum = season.seasonNum;
                             tpl.Append($"{seasonNum} сезон", $"{host}/lite/getstv?rjson={rjson}&s={seasonNum}{defaultargs}", seasonNum);
                         }
 
@@ -142,7 +143,7 @@ namespace Online.Controllers
                     }
                     else
                     {
-                        var episodes = cache.Value["seasons"].First(i => i.Value<int>("seasonNum") == s)["episodes"];
+                        var episodes = cache.Value.seasons.First(i => i.seasonNum == s).episodes;
 
                         #region Перевод
                         var vtpl = new VoiceTpl();
@@ -150,9 +151,9 @@ namespace Online.Controllers
 
                         foreach (var e in episodes)
                         {
-                            foreach (var tr in e["trs"])
+                            foreach (var tr in e.trs)
                             {
-                                int trId = tr.Value<int>("trId");
+                                int trId = tr.trId;
                                 if (temp_translation.Contains(trId))
                                     continue;
 
@@ -161,7 +162,7 @@ namespace Online.Controllers
                                 if (t == -1)
                                     t = trId;
 
-                                vtpl.Append(tr.Value<string>("trName"), t == trId, $"{host}/lite/getstv?rjson={rjson}&s={s}&t={trId}{defaultargs}");
+                                vtpl.Append(tr.trName, t == trId, $"{host}/lite/getstv?rjson={rjson}&s={s}&t={trId}{defaultargs}");
                             }
                         }
                         #endregion
@@ -170,12 +171,12 @@ namespace Online.Controllers
 
                         foreach (var episode in episodes)
                         {
-                            foreach (var tr in episode["trs"])
+                            foreach (var tr in episode.trs)
                             {
-                                if (tr.Value<int>("trId") == t)
+                                if (tr.trId == t)
                                 {
-                                    int e = episode.Value<int>("episodeNum");
-                                    string link = $"{host}/lite/getstv/video.m3u8?id={tr.Value<string>("_id")}";
+                                    int e = episode.episodeNum;
+                                    string link = $"{host}/lite/getstv/video.m3u8?id={tr._id}";
                                     string streamlink = accsArgs($"{link}&play=true");
 
                                     etpl.Append($"{e} серия", title ?? original_title, s.ToString(), e.ToString(), link, "call", streamlink: streamlink);
@@ -199,10 +200,10 @@ namespace Online.Controllers
             if (await IsRequestBlocked(rch: true, rch_check: !play))
                 return badInitMsg;
 
-            rhubFallback:
-            var cache = await InvokeCacheResult<JObject>($"getstv:view:stream:{id}:{init.token}", 10, async e =>
+        rhubFallback:
+            var cache = await InvokeCacheResult<MediaStreamRoot>($"getstv:view:stream:{id}:{init.token}", 10, async e =>
             {
-                var root = await httpHydra.Get<JObject>($"{init.host}/api/media/{id}?format=m3u8&protocol=https",
+                var root = await httpHydra.Get<MediaStreamRoot>($"{init.host}/api/media/{id}?format=m3u8&protocol=https",
                     addheaders: bearer,
                     safety: true
                 );
@@ -210,7 +211,7 @@ namespace Online.Controllers
                 if (root == null)
                     return e.Fail("json", refresh_proxy: true);
 
-                if (!root.ContainsKey("resolutions"))
+                if (root?.resolutions == null || root.resolutions.Count == 0)
                     return e.Fail("resolutions");
 
                 return e.Success(root);
@@ -227,21 +228,17 @@ namespace Online.Controllers
             #region subtitle
             var subtitles = new SubtitleTpl();
 
-            try
+            if (root.subtitles != null)
             {
-                foreach (var sub in root["subtitles"])
-                    subtitles.Append(sub.Value<string>("lang"), sub.Value<string>("url"));
-            }
-            catch (System.Exception ex)
-            {
-                Serilog.Log.Error(ex, "{Class} {CatchId}", "GetsTV", "id_b1kcg8fl");
+                foreach (var sub in root.subtitles)
+                    subtitles.Append(sub.lang, sub.url);
             }
             #endregion
 
             var streamquality = new StreamQualityTpl();
 
-            foreach (var r in root["resolutions"])
-                streamquality.Append(HostStreamProxy(r.Value<string>("url")), $"{r.Value<int>("type")}p");
+            foreach (var r in root.resolutions)
+                streamquality.Append(HostStreamProxy(r.url), $"{r.type}p");
 
             var first = streamquality.Firts();
             if (first == null)
@@ -250,9 +247,8 @@ namespace Online.Controllers
             if (play)
                 return RedirectToPlay(first.link);
 
-            var titleObj = root["media"]["movie"]["title"] as JObject;
-            string titleRu = titleObj?["ru"]?.ToString();
-            string titleEn = titleObj?["en"]?.ToString();
+            string titleRu = root.media?.movie?.title?.ru;
+            string titleEn = root.media?.movie?.title?.en;
 
             string name = titleRu ?? titleEn;
             if (titleRu != null && titleEn != null)
@@ -292,17 +288,17 @@ namespace Online.Controllers
             if (string.IsNullOrWhiteSpace(title) || string.IsNullOrEmpty(init.token))
                 return default;
 
-            JArray root = null;
+            List<SearchItem> root = null;
 
-            string memKey = $"getstv:search:{title ?? original_title}";
-            var entryCache = await hybridCache.EntryAsync<JArray>(memKey);
+            string memKey = $"getstv:search:{title}";
+            var entryCache = await hybridCache.EntryAsync<List<SearchItem>>(memKey);
             if (entryCache.success)
             {
                 root = entryCache.value;
             }
             else
             {
-                root = await httpHydra.Get<JArray>($"{init.host}/api/movies?skip=0&sort=updated&searchText={HttpUtility.UrlEncode(title)}",
+                root = await httpHydra.Get<List<SearchItem>>($"{init.host}/api/movies?skip=0&sort=updated&searchText={HttpUtility.UrlEncode(title)}",
                     addheaders: bearer,
                     safety: true
                 );
@@ -314,7 +310,7 @@ namespace Online.Controllers
                 }
 
                 proxyManager?.Success();
-                hybridCache.Set(memKey, root, cacheTime(20));
+                hybridCache.Set(memKey, root, TimeSpan.FromHours(4));
             }
 
             List<string> ids = new List<string>();
@@ -325,25 +321,24 @@ namespace Online.Controllers
 
             foreach (var j in root)
             {
-                string uri = $"{host}/lite/getstv?orid={j.Value<string>("_id")}&title={HttpUtility.UrlEncode(title)}&original_title={HttpUtility.UrlEncode(original_title)}&year={year}";
+                string uri = $"{host}/lite/getstv?orid={j._id}&title={HttpUtility.UrlEncode(title)}&original_title={HttpUtility.UrlEncode(original_title)}&year={year}";
 
-                var titleObj = j["title"] as JObject;
-                string titleRu = titleObj?["ru"]?.ToString();
-                string titleEn = titleObj?["en"]?.ToString();
+                string titleRu = j.title?.ru;
+                string titleEn = j.title?.en;
 
                 string name = titleRu ?? titleEn;
                 if (titleRu != null && titleEn != null)
                     name = $"{titleRu} / {titleEn}";
 
-                int released = j.Value<DateTime>("released").Year;
-                string img = $"https://img.getstv.com/poster/cover/345x518/{j.Value<string>("poster")}.jpg";
-                stpl.Append(name, released.ToString(), j.Value<string>("contentType"), uri, PosterApi.Size(img));
+                int released = j.released.Year;
+                string img = $"https://img.getstv.com/poster/cover/345x518/{j.poster}.jpg";
+                stpl.Append(name, released.ToString(), j.contentType, uri, PosterApi.Size(img));
 
                 if ((titleRu != null && (StringConvert.SearchName(titleRu) == stitle || StringConvert.SearchName(titleRu) == soriginal_title)) ||
                     (titleEn != null && (StringConvert.SearchName(titleEn) == stitle || StringConvert.SearchName(titleEn) == soriginal_title)))
                 {
                     if (released == year)
-                        ids.Add(j.Value<string>("_id"));
+                        ids.Add(j._id);
                 }
             }
 

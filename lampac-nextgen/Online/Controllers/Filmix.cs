@@ -10,7 +10,7 @@ namespace Online.Controllers
     {
         static readonly HttpClient httpClient = FriendlyHttp.CreateHttpClient();
 
-        public Filmix() : base(ModInit.premiumConf.Filmix)
+        public Filmix() : base(ModInit.siteConf.Filmix)
         {
             requestInitialization += () =>
             {

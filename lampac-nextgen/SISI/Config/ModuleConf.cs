@@ -6,10 +6,6 @@
 
         public bool lgbt { get; set; }
 
-        public bool NextHUB { get; set; }
-
-        public string[] NextHUB_sites_enabled { get; set; }
-
         public BookmarksConf bookmarks { get; set; }
 
         public HistoryConf history { get; set; }

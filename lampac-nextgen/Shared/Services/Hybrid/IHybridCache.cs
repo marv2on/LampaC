@@ -9,6 +9,8 @@ namespace Shared.Services.Hybrid
 
         bool ContainsKey<T>(string key, out T value);
 
+        bool ContainsKey<T>(string key, out T value, out DateTimeOffset ex);
+
         Task<HybridCacheEntry<TItem>> EntryAsync<TItem>(string key, bool fileCache = false, JsonTypeInfo<TItem> jsonType = null, bool textJson = false);
 
 

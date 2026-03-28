@@ -1,5 +1,4 @@
 ﻿using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Caching.Memory;
 using Shared;
 using Shared.Models.Base;
 using System;
@@ -9,9 +8,13 @@ using System.Threading.Tasks;
 
 namespace Lamson
 {
+    /// <summary>
+    /// ModInit.cs
+    /// EventListener.Middleware
+    /// </summary>
     public static class Middlewares
     {
-        public static bool Invoke(bool first, HttpContext httpContext, IMemoryCache memoryCache)
+        public static bool Invoke(bool first, HttpContext httpContext)
         {
             var requestInfo = httpContext.Features.Get<RequestModel>();
             if (first || requestInfo.IsLocalRequest || requestInfo.IsAnonymousRequest)
@@ -23,7 +26,7 @@ namespace Lamson
             return true;
         }
 
-        async public static Task<bool> InvokeAsync(bool first, HttpContext httpContext, IMemoryCache memoryCache)
+        async public static Task<bool> InvokeAsync(bool first, HttpContext httpContext)
         {
             if (!first)
                 return true;

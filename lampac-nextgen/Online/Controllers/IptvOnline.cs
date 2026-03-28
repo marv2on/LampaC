@@ -8,7 +8,7 @@ namespace Online.Controllers
 {
     public class IptvOnline : BaseOnlineController
     {
-        public IptvOnline() : base(ModInit.premiumConf.IptvOnline) { }
+        public IptvOnline() : base(ModInit.siteConf.IptvOnline) { }
 
         #region Bind
         [HttpGet]

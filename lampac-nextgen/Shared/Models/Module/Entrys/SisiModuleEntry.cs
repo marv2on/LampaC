@@ -5,20 +5,23 @@ namespace Shared.Models.Module.Entrys
 {
     public class SisiModuleEntry
     {
-        public static List<IModuleSisi> sisiModulesCache;
+        public static List<IModuleSisi> Modules;
+        public static List<IModuleSisiAsync> ModulesAsync;
+
         static readonly object _lock = new object();
 
         public static void EnsureCache(bool forced = false)
         {
-            if (forced == false && sisiModulesCache != null)
+            if (forced == false && Modules != null)
                 return;
 
             lock (_lock)
             {
-                if (forced == false && sisiModulesCache != null)
+                if (forced == false && Modules != null)
                     return;
 
-                sisiModulesCache = new List<IModuleSisi>();
+                Modules = new List<IModuleSisi>();
+                ModulesAsync = new List<IModuleSisiAsync>();
 
                 try
                 {
@@ -49,13 +52,20 @@ namespace Shared.Models.Module.Entrys
                                 if (!type.IsClass || type.IsAbstract)
                                     continue;
 
-                                if (!typeof(IModuleSisi).IsAssignableFrom(type))
-                                    continue;
+                                if (typeof(IModuleSisi).IsAssignableFrom(type))
+                                {
+                                    // Требуется public parameterless ctor
+                                    var instance = Activator.CreateInstance(type) as IModuleSisi;
+                                    if (instance != null)
+                                        Modules.Add(instance);
+                                }
 
-                                // Требуется public parameterless ctor
-                                var instance = Activator.CreateInstance(type) as IModuleSisi;
-                                if (instance != null)
-                                    sisiModulesCache.Add(instance);
+                                if (typeof(IModuleSisiAsync).IsAssignableFrom(type))
+                                {
+                                    var instance = Activator.CreateInstance(type) as IModuleSisiAsync;
+                                    if (instance != null)
+                                        ModulesAsync.Add(instance);
+                                }
                             }
                             catch
                             {

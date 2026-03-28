@@ -15,6 +15,11 @@ namespace Shared.Services
     public static class Http
     {
         #region static
+        static Http()
+        {
+            EventListener.UpdateInitFile += cacheDefaultRequestHeaders.Clear;
+        }
+
         static readonly Serilog.ILogger Log = Serilog.Log.ForContext("SourceContext", nameof(Http));
 
         public static IHttpClientFactory httpClientFactory;
@@ -26,9 +31,10 @@ namespace Shared.Services
             ReadCommentHandling = JsonCommentHandling.Skip
         };
 
-        static Http()
+        static async Task InvokeHttpResponseHandlersAsync(EventHttpResponse eventHttpResponse)
         {
-            EventListener.UpdateInitFile += cacheDefaultRequestHeaders.Clear;
+            foreach (Func<EventHttpResponse, Task> handler in EventListener.HttpResponse.GetInvocationList())
+                await handler.Invoke(eventHttpResponse).ConfigureAwait(false);
         }
         #endregion
 
@@ -122,7 +128,12 @@ namespace Shared.Services
             }
 
             if (EventListener.HttpHandler != null)
-                EventListener.HttpHandler.Invoke(new EventHttpHandler(url, handler, proxy, cookieContainer));
+            {
+                var em = new EventHttpHandler(url, handler, proxy, cookieContainer);
+
+                foreach (Action<EventHttpHandler> eventHandler in EventListener.HttpHandler.GetInvocationList())
+                    eventHandler.Invoke(em);
+            }
 
             return handler;
         }
@@ -196,7 +207,12 @@ namespace Shared.Services
                 }
 
                 if (EventListener.HttpRequestHeaders != null)
-                    EventListener.HttpRequestHeaders.Invoke(new EventHttpHeaders(url, client, cookie, referer, headers, useDefaultHeaders));
+                {
+                    var em = new EventHttpHeaders(url, client, cookie, referer, headers, useDefaultHeaders);
+
+                    foreach (Action<EventHttpHeaders> handler in EventListener.HttpRequestHeaders.GetInvocationList())
+                        handler.Invoke(em);
+                }
             }
         }
         #endregion
@@ -430,14 +446,14 @@ namespace Shared.Services
                             {
                                 if (statusCodeOK && response.StatusCode != HttpStatusCode.OK)
                                 {
-                                    await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, client, body, response, string.Empty)).ConfigureAwait(false);
+                                    await InvokeHttpResponseHandlersAsync(new EventHttpResponse(url, client, body, response, string.Empty)).ConfigureAwait(false);
                                     return (false, response);
                                 }
 
                                 await content.LoadIntoBufferAsync().ConfigureAwait(false);
 
                                 string result = await content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
-                                await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, client, body, response, result)).ConfigureAwait(false);
+                                await InvokeHttpResponseHandlersAsync(new EventHttpResponse(url, client, body, response, result)).ConfigureAwait(false);
                             }
                             else
                             {
@@ -461,7 +477,7 @@ namespace Shared.Services
 
                 if (EventListener.HttpResponse != null)
                 {
-                    await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, null, null, new HttpResponseMessage()
+                    await InvokeHttpResponseHandlersAsync(new EventHttpResponse(url, null, null, new HttpResponseMessage()
                     {
                         StatusCode = HttpStatusCode.InternalServerError,
                         RequestMessage = new HttpRequestMessage()
@@ -626,7 +642,7 @@ namespace Shared.Services
                             }
 
                             if (EventListener.HttpResponse != null)
-                                await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, client, body, response, res)).ConfigureAwait(false);
+                                await InvokeHttpResponseHandlersAsync(new EventHttpResponse(url, client, body, response, res)).ConfigureAwait(false);
 
                             if (string.IsNullOrWhiteSpace(res))
                                 return (null, response);
@@ -643,7 +659,7 @@ namespace Shared.Services
 
                 if (EventListener.HttpResponse != null)
                 {
-                    await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, null, null, new HttpResponseMessage()
+                    await InvokeHttpResponseHandlersAsync(new EventHttpResponse(url, null, null, new HttpResponseMessage()
                     {
                         StatusCode = HttpStatusCode.InternalServerError,
                         RequestMessage = new HttpRequestMessage()
@@ -726,7 +742,7 @@ namespace Shared.Services
                             }
 
                             if (EventListener.HttpResponse != null)
-                                await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, client, data, response, res)).ConfigureAwait(false);
+                                await InvokeHttpResponseHandlersAsync(new EventHttpResponse(url, client, data, response, res)).ConfigureAwait(false);
 
                             if (string.IsNullOrWhiteSpace(res))
                                 return (null, response);
@@ -743,7 +759,7 @@ namespace Shared.Services
 
                 if (EventListener.HttpResponse != null)
                 {
-                    await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, null, data, new HttpResponseMessage()
+                    await InvokeHttpResponseHandlersAsync(new EventHttpResponse(url, null, data, new HttpResponseMessage()
                     {
                         StatusCode = HttpStatusCode.InternalServerError,
                         RequestMessage = new HttpRequestMessage()
@@ -864,14 +880,14 @@ namespace Shared.Services
                             {
                                 if (statusCodeOK && response.StatusCode != HttpStatusCode.OK)
                                 {
-                                    await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, client, data, response, string.Empty)).ConfigureAwait(false);
+                                    await InvokeHttpResponseHandlersAsync(new EventHttpResponse(url, client, data, response, string.Empty)).ConfigureAwait(false);
                                     return (false, response);
                                 }
 
                                 await content.LoadIntoBufferAsync().ConfigureAwait(false);
 
                                 string result = await content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
-                                await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, client, data, response, result)).ConfigureAwait(false);
+                                await InvokeHttpResponseHandlersAsync(new EventHttpResponse(url, client, data, response, result)).ConfigureAwait(false);
                             }
                             else
                             {
@@ -895,7 +911,7 @@ namespace Shared.Services
 
                 if (EventListener.HttpResponse != null)
                 {
-                    await EventListener.HttpResponse.Invoke(new EventHttpResponse(url, null, data, new HttpResponseMessage()
+                    await InvokeHttpResponseHandlersAsync(new EventHttpResponse(url, null, data, new HttpResponseMessage()
                     {
                         StatusCode = HttpStatusCode.InternalServerError,
                         RequestMessage = new HttpRequestMessage()

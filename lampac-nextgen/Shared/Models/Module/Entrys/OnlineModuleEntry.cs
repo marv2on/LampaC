@@ -5,20 +5,25 @@ namespace Shared.Models.Module.Entrys
 {
     public class OnlineModuleEntry
     {
-        public static List<IModuleOnline> onlineModulesCache;
+        public static List<IModuleOnline> Modules;
+        public static List<IModuleOnlineAsync> ModulesAsync;
+
+        public static List<IModuleOnlineSpider> Spiders;
+        public static List<IModuleOnlineSpiderAsync> SpidersAsync;
+
         static readonly object _lock = new object();
 
         public static void EnsureCache(bool forced = false)
         {
-            if (forced == false && onlineModulesCache != null)
+            if (forced == false && Modules != null)
                 return;
 
             lock (_lock)
             {
-                if (forced == false && onlineModulesCache != null)
+                if (forced == false && Modules != null)
                     return;
 
-                onlineModulesCache = new List<IModuleOnline>();
+                Modules = new List<IModuleOnline>();
 
                 try
                 {
@@ -49,13 +54,34 @@ namespace Shared.Models.Module.Entrys
                                 if (!type.IsClass || type.IsAbstract)
                                     continue;
 
-                                if (!typeof(IModuleOnline).IsAssignableFrom(type))
-                                    continue;
+                                if (typeof(IModuleOnline).IsAssignableFrom(type))
+                                {
+                                    // Требуется public parameterless ctor
+                                    var instance = Activator.CreateInstance(type) as IModuleOnline;
+                                    if (instance != null)
+                                        Modules.Add(instance);
+                                }
 
-                                // Требуется public parameterless ctor
-                                var instance = Activator.CreateInstance(type) as IModuleOnline;
-                                if (instance != null)
-                                    onlineModulesCache.Add(instance);
+                                if (typeof(IModuleOnlineAsync).IsAssignableFrom(type))
+                                {
+                                    var instance = Activator.CreateInstance(type) as IModuleOnlineAsync;
+                                    if (instance != null)
+                                        ModulesAsync.Add(instance);
+                                }
+
+                                if (typeof(IModuleOnlineSpider).IsAssignableFrom(type))
+                                {
+                                    var instance = Activator.CreateInstance(type) as IModuleOnlineSpider;
+                                    if (instance != null)
+                                        Spiders.Add(instance);
+                                }
+
+                                if (typeof(IModuleOnlineSpiderAsync).IsAssignableFrom(type))
+                                {
+                                    var instance = Activator.CreateInstance(type) as IModuleOnlineSpiderAsync;
+                                    if (instance != null)
+                                        SpidersAsync.Add(instance);
+                                }
                             }
                             catch
                             {

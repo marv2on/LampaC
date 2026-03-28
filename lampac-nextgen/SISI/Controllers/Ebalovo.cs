@@ -10,7 +10,7 @@ namespace SISI.Controllers
         public ListController() : base(ModInit.siteConf.Ebalovo) { }
 
         [HttpGet]
-        [Staticache(11)]
+        [Staticache]
         [Route("elo")]
         async public Task<ActionResult> Index(string search, string sort, string c, int pg = 1)
         {

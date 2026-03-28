@@ -43,14 +43,8 @@ namespace Shared.Models.Templates
             if (string.IsNullOrEmpty(link) || string.IsNullOrEmpty(quality))
                 return;
 
-            if (EventListener.StreamQuality != null)
-            {
-                var eventResult = EventListener.StreamQuality.Invoke(new EventStreamQuality(link, quality, prepend: false));
-                if (eventResult.next.HasValue && !eventResult.next.Value)
-                    return;
-
-                link = eventResult.link ?? link;
-            }
+            if (!TryProcessStreamQualityEvent(ref link, quality, prepend: false))
+                return;
 
             if (!string.IsNullOrEmpty(link))
                 data.Add(new StreamQualityDto(link, quality));
@@ -61,17 +55,32 @@ namespace Shared.Models.Templates
             if (string.IsNullOrEmpty(link) || string.IsNullOrEmpty(quality))
                 return;
 
-            if (EventListener.StreamQuality != null)
-            {
-                var eventResult = EventListener.StreamQuality.Invoke(new EventStreamQuality(link, quality, prepend: true));
-                if (eventResult.next.HasValue && !eventResult.next.Value)
-                    return;
-
-                link = eventResult.link ?? link;
-            }
+            if (!TryProcessStreamQualityEvent(ref link, quality, prepend: true))
+                return;
 
             if (!string.IsNullOrEmpty(link))
                 data.Insert(0, new StreamQualityDto(link, quality));
+        }
+
+        private static bool TryProcessStreamQualityEvent(ref string link, string quality, bool prepend)
+        {
+            var streamQualityHandlers = EventListener.StreamQuality;
+            if (streamQualityHandlers == null)
+                return true;
+
+            var em = new EventStreamQuality(link, quality, prepend);
+
+            foreach (Func<EventStreamQuality, (bool? next, string link)> handler in streamQualityHandlers.GetInvocationList())
+            {
+                var eventResult = handler(em);
+
+                link = eventResult.link ?? link;
+
+                if (eventResult.next.HasValue && !eventResult.next.Value)
+                    return false;
+            }
+
+            return true;
         }
 
         public string ToJson() => JsonSerializer.Serialize(ToObject(), StreamQualityJsonContext.Default.DictionaryStringString);
@@ -104,8 +113,13 @@ namespace Shared.Models.Templates
 
             if (EventListener.StreamQualityFirts != null)
             {
-                var eventResult = EventListener.StreamQualityFirts.Invoke(new EventStreamQualityFirts(data));
-                return eventResult ?? data[0];
+                var em = new EventStreamQualityFirts(data);
+                foreach (Func<EventStreamQualityFirts, StreamQualityDto> handler in EventListener.StreamQualityFirts.GetInvocationList())
+                {
+                    var eventResult = handler.Invoke(em);
+                    if (eventResult != null)
+                        return eventResult;
+                }
             }
 
             return data[0];

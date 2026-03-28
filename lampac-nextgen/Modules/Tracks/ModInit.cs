@@ -27,6 +27,11 @@ namespace Tracks
             Directory.CreateDirectory("database/tracks");
         }
 
+        public void Dispose()
+        {
+            EventListener.UpdateInitFile -= updateConf;
+        }
+
         void updateConf()
         {
             conf = ModuleInvoke.Init("Tracks", new ModuleConf()
@@ -37,11 +42,6 @@ namespace Tracks
                     new("^/ffprobe", new WafLimitMap { limit = 10, second = 1 })
                 }
             });
-        }
-
-        public void Dispose()
-        {
-            EventListener.UpdateInitFile -= updateConf;
         }
     }
 }

@@ -119,7 +119,7 @@ namespace Online.Services
             if (string.IsNullOrEmpty(story))
                 return null;
 
-            string uri = $"{ModInit.premiumConf.Filmix.host}/api/v2/search?story={HttpUtility.UrlEncode(story)}&user_dev_apk=2.0.1&user_dev_id=&user_dev_name=Xiaomi&user_dev_os=11&user_dev_token=&user_dev_vendor=Xiaomi";
+            string uri = $"{ModInit.siteConf.Filmix.host}/api/v2/search?story={HttpUtility.UrlEncode(story)}&user_dev_apk=2.0.1&user_dev_id=&user_dev_name=Xiaomi&user_dev_os=11&user_dev_token=&user_dev_vendor=Xiaomi";
 
             var root = await httpHydra.Get<List<SearchModel>>(uri, addheaders: bearer, safety: true);
 
@@ -203,7 +203,7 @@ namespace Online.Services
                 }
                 else
                 {
-                    #region Перевод 
+                    #region Перевод
                     int indexTranslate = 0;
                     var vtpl = new VoiceTpl();
 

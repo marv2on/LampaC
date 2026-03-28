@@ -1,5 +1,10 @@
 ﻿namespace SISI.Models.Xvideos
 {
+    public class PornstarsRoot
+    {
+        public List<Related> videos { get; set; }
+    }
+
     public class Related
     {
         public string tf { get; set; }

@@ -27,7 +27,7 @@ namespace Core.Middlewares
                 if (EventListener.ProxyApiCreateHttpRequest != null)
                 {
                     var em = new EventProxyApiCreateHttpRequest(decryptLink.plugin, httpContext.Request, decryptLink.headers, uri, request);
-                    await EventListener.ProxyApiCreateHttpRequest.Invoke(em).ConfigureAwait(false);
+                    await InvokeProxyApiCreateHttpRequestHandlers(em).ConfigureAwait(false);
                 }
 
                 using (var ctsHttp = CancellationTokenSource.CreateLinkedTokenSource(httpContext.RequestAborted))

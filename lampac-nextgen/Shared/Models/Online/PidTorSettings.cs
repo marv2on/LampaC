@@ -1,6 +1,4 @@
-﻿using Shared.Models.Base;
-
-namespace Shared.Models.Online.Settings
+﻿namespace Shared.Models.Online.Settings
 {
     public class PidTorSettings : Igroup, ICloneable
     {

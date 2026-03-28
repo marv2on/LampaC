@@ -12,7 +12,7 @@ namespace SISI.Controllers
         public Porntrex() : base(ModInit.siteConf.Porntrex) { }
 
         [HttpGet]
-        [Staticache(11)]
+        [Staticache]
         [Route("ptx")]
         async public Task<ActionResult> Index(string search, string sort, string c, int pg = 1)
         {

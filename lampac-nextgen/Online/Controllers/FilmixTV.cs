@@ -12,7 +12,7 @@ namespace Online.Controllers
     {
         static readonly HttpClient http2Client = FriendlyHttp.CreateHttp2Client();
 
-        public FilmixTV() : base(ModInit.premiumConf.FilmixTV)
+        public FilmixTV() : base(ModInit.siteConf.FilmixTV)
         {
             requestInitialization += () =>
             {

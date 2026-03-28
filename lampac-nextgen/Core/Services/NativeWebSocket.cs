@@ -116,7 +116,11 @@ namespace Core.Services
                     await SendAsync(connection, "Connected", connectionId).ConfigureAwait(false);
 
                     if (EventListener.NwsConnected != null)
-                        EventListener.NwsConnected.Invoke(new EventNwsConnected(connectionId, requestInfo, connection, cancellationSource.Token));
+                    {
+                        var em = new EventNwsConnected(connectionId, requestInfo, connection, cancellationSource.Token);
+                        foreach (Action<EventNwsConnected> handler in EventListener.NwsConnected.GetInvocationList())
+                            handler(em);
+                    }
 
                     await ReceiveLoopAsync(connection, cancellationSource.Token).ConfigureAwait(false);
                 }
@@ -137,7 +141,11 @@ namespace Core.Services
                             RchClient.OnDisconnected(connectionId);
 
                             if (EventListener.NwsDisconnected != null)
-                                EventListener.NwsDisconnected.Invoke(new EventNwsDisconnected(connectionId));
+                            {
+                                var em = new EventNwsDisconnected(connectionId);
+                                foreach (Action<EventNwsDisconnected> handler in EventListener.NwsDisconnected.GetInvocationList())
+                                    handler(em);
+                            }
                         }
                     }
                 }
@@ -245,7 +253,11 @@ namespace Core.Services
                                 args = argsProp;
 
                             if (EventListener.NwsMessage != null)
-                                EventListener.NwsMessage.Invoke(new EventNwsMessage(connection.ConnectionId, payload, method, args));
+                            {
+                                var em = new EventNwsMessage(connection.ConnectionId, payload, method, args);
+                                foreach (Action<EventNwsMessage> handler in EventListener.NwsMessage.GetInvocationList())
+                                    handler(em);
+                            }
 
                             await InvokeAsync(connection, method, args).ConfigureAwait(false);
                         }

@@ -14,7 +14,7 @@ namespace Lamson.Controllers
         public KinoGram() : base(ModInit.KinoGram) { }
 
         [HttpGet]
-        [Route("kinogram")]
+        [Route("lite/kinogram")]
         async public Task<ActionResult> Index(long id, string imdb_id, long kinopoisk_id, string title, string original_title, string original_language, int year, string source, int serial, string t, int s = -1)
         {
             if (await IsRequestBlocked(rch: false))
@@ -54,7 +54,7 @@ namespace Lamson.Controllers
                     var tpl = new SeasonTpl(quality: "4K HDR");
 
                     foreach (var season in result.serial)
-                        tpl.Append($"{season.Key} сезон", $"{host}/kinogram?s={season.Key}" + defaultargs, season.Key);
+                        tpl.Append($"{season.Key} сезон", $"{host}/lite/kinogram?s={season.Key}" + defaultargs, season.Key);
 
                     return ContentTpl(tpl);
                 }
@@ -70,7 +70,7 @@ namespace Lamson.Controllers
                         if (string.IsNullOrEmpty(activTranslate))
                             activTranslate = translation.id;
 
-                        vtpl.Append(translation.name, activTranslate == translation.id, $"{host}/kinogram?s={s}&t={translation.id}" + defaultargs);
+                        vtpl.Append(translation.name, activTranslate == translation.id, $"{host}/lite/kinogram?s={s}&t={translation.id}" + defaultargs);
                     }
                     #endregion
 

@@ -9,7 +9,7 @@ namespace SISI.Controllers
         public Runetki() : base(ModInit.siteConf.Runetki) { }
 
         [HttpGet]
-        [Staticache(6)]
+        [Staticache]
         [Route("runetki")]
         async public Task<ActionResult> Index(string search, string sort, int pg = 1)
         {

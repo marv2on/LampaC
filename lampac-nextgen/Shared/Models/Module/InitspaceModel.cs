@@ -1,5 +1,4 @@
 ﻿using Microsoft.AspNetCore.Builder;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -10,8 +9,6 @@ namespace Shared.Models.Module
         public string path { get; set; }
 
         public INws nws { get; set; }
-
-        public IMemoryCache memoryCache { get; set; }
 
         public IConfiguration configuration { get; set; }
 

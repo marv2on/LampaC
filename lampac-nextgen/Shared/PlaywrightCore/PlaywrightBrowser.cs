@@ -224,7 +224,7 @@ namespace Shared.PlaywrightCore
 
                 if (EventListener.PlaywrightHttpResponse != null)
                 {
-                    await EventListener.PlaywrightHttpResponse.Invoke(
+                    await SendPlaywrightHttpResponseEvent(
                         new EventPlaywrightHttpResponse(
                             url: url,
                             method: response?.Request?.Method,
@@ -245,7 +245,7 @@ namespace Shared.PlaywrightCore
 
                 if (EventListener.PlaywrightHttpResponse != null)
                 {
-                    await EventListener.PlaywrightHttpResponse.Invoke(
+                    await SendPlaywrightHttpResponseEvent(
                         new EventPlaywrightHttpResponse(
                             url: url,
                             method: response?.Request?.Method,
@@ -260,6 +260,12 @@ namespace Shared.PlaywrightCore
             }
 
             return null;
+        }
+
+        async static Task SendPlaywrightHttpResponseEvent(EventPlaywrightHttpResponse eventData)
+        {
+            foreach (Func<EventPlaywrightHttpResponse, Task> handler in EventListener.PlaywrightHttpResponse.GetInvocationList())
+                await handler.Invoke(eventData).ConfigureAwait(false);
         }
     }
 }

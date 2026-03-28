@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
@@ -21,9 +21,9 @@ namespace Core.Controllers
             if (CoreInit.conf.listen.version)
             {
                 if (type == "name")
-                    return Content("Robot Rock", "text/plain; charset=utf-8");
+                    return Content("Push The Tempo", "text/plain; charset=utf-8");
 
-                return Redirect("https://youtu.be/sFZjqVnWBhc?t=12");
+                return Redirect("https://youtu.be/JEq10L7u3SM&t=37");
             }
 
             return StatusCode(404);

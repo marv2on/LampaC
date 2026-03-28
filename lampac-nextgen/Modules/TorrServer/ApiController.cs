@@ -15,6 +15,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 
@@ -72,8 +73,13 @@ namespace TorrServer.Controllers
 
             try
             {
-                var responseMessage = await httpClient.GetAsync(pathRequest + HttpContext.Request.QueryString.Value).ConfigureAwait(false);
-                html = await responseMessage.Content.ReadAsStringAsync().ConfigureAwait(false);
+                using (var ctsHttp = CancellationTokenSource.CreateLinkedTokenSource(HttpContext.RequestAborted))
+                {
+                    ctsHttp.CancelAfter(TimeSpan.FromSeconds(5));
+
+                    var responseMessage = await httpClient.GetAsync(pathRequest + HttpContext.Request.QueryString.Value, ctsHttp.Token).ConfigureAwait(false);
+                    html = await responseMessage.Content.ReadAsStringAsync(ctsHttp.Token).ConfigureAwait(false);
+                }
             }
             catch (System.Exception ex)
             {
@@ -183,50 +189,57 @@ namespace TorrServer.Controllers
             string pathRequest = Regex.Replace(HttpContext.Request.Path.Value, "^/ts", "");
             string servUri = $"http://{CoreInit.conf.listen.localhost}:{ModInit.tsport}{pathRequest + HttpContext.Request.QueryString.Value}";
 
-            #region settings
-            if (pathRequest.StartsWith("/settings"))
+            using (var ctsHttp = CancellationTokenSource.CreateLinkedTokenSource(HttpContext.RequestAborted))
             {
-                if (HttpContext.Request.Method != "POST")
-                {
-                    HttpContext.Response.StatusCode = 404;
-                    await HttpContext.Response.WriteAsync("404 page not found", HttpContext.RequestAborted).ConfigureAwait(false);
-                    return;
-                }
+                ctsHttp.CancelAfter(TimeSpan.FromSeconds(5));
 
-                using (var reader = new StreamReader(HttpContext.Request.Body, Encoding.UTF8, false, PoolInvk.bufferSize, leaveOpen: true))
+                #region settings
+                if (pathRequest.StartsWith("/settings"))
                 {
-                    string requestJson = await reader.ReadToEndAsync().ConfigureAwait(false);
-
-                    if (requestJson.Contains("\"get\""))
+                    if (HttpContext.Request.Method != "POST")
                     {
-                        var rs = await httpClient.PostAsync("/settings", new StringContent("{\"action\":\"get\"}", Encoding.UTF8, "application/json")).ConfigureAwait(false);
-                        await rs.Content.CopyToAsync(HttpContext.Response.Body, HttpContext.RequestAborted).ConfigureAwait(false);
+                        HttpContext.Response.StatusCode = 404;
+                        await HttpContext.Response.WriteAsync("404 page not found", HttpContext.RequestAborted).ConfigureAwait(false);
                         return;
                     }
-                    else if (!ModInit.conf.rdb || requestInfo.IP == "127.0.0.1" || requestInfo.IP.StartsWith("192.168."))
-                    {
-                        await httpClient.PostAsync("/settings", new StringContent(requestJson, Encoding.UTF8, "application/json")).ConfigureAwait(false);
-                    }
 
-                    await HttpContext.Response.WriteAsync(string.Empty, HttpContext.RequestAborted).ConfigureAwait(false);
+                    using (var reader = new StreamReader(HttpContext.Request.Body, Encoding.UTF8, false, PoolInvk.bufferSize, leaveOpen: true))
+                    {
+                        string requestJson = await reader.ReadToEndAsync(ctsHttp.Token).ConfigureAwait(false);
+
+                        if (requestJson.Contains("\"get\""))
+                        {
+                            var data = new StringContent("{\"action\":\"get\"}", Encoding.UTF8, "application/json");
+                            var rs = await httpClient.PostAsync("/settings", data, ctsHttp.Token).ConfigureAwait(false);
+                            await rs.Content.CopyToAsync(HttpContext.Response.Body, HttpContext.RequestAborted).ConfigureAwait(false);
+                            return;
+                        }
+                        else if (!ModInit.conf.rdb || requestInfo.IP == "127.0.0.1" || requestInfo.IP.StartsWith("192.168."))
+                        {
+                            var data = new StringContent(requestJson, Encoding.UTF8, "application/json");
+                            await httpClient.PostAsync("/settings", data, ctsHttp.Token).ConfigureAwait(false);
+                        }
+
+                        await HttpContext.Response.WriteAsync(string.Empty, ctsHttp.Token).ConfigureAwait(false);
+                        return;
+                    }
+                }
+                #endregion
+
+                #region playlist
+                if (pathRequest.StartsWith("/stream/") && HttpContext.Request.QueryString.Value.Contains("&m3u"))
+                {
+                    string m3u = await httpClient.GetStringAsync(servUri, ctsHttp.Token).ConfigureAwait(false);
+                    HttpContext.Response.ContentType = "audio/x-mpegurl; charset=utf-8";
+                    await HttpContext.Response.WriteAsync((m3u ?? string.Empty).Replace("/stream/", "/ts/stream/"), ctsHttp.Token).ConfigureAwait(false);
                     return;
                 }
+                #endregion
             }
-            #endregion
-
-            #region playlist
-            if (pathRequest.StartsWith("/stream/") && HttpContext.Request.QueryString.Value.Contains("&m3u"))
-            {
-                string m3u = await httpClient.GetStringAsync(servUri).ConfigureAwait(false);
-                HttpContext.Response.ContentType = "audio/x-mpegurl; charset=utf-8";
-                await HttpContext.Response.WriteAsync((m3u ?? string.Empty).Replace("/stream/", "/ts/stream/"), HttpContext.RequestAborted).ConfigureAwait(false);
-                return;
-            }
-            #endregion
 
             var request = CreateProxyHttpRequest(HttpContext, new Uri(servUri));
 
-            var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+            var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, HttpContext.RequestAborted).ConfigureAwait(false);
             await CopyProxyHttpResponse(HttpContext, response).ConfigureAwait(false);
         }
         #endregion

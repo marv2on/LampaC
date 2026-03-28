@@ -10,7 +10,7 @@ namespace Online.Controllers
     {
         static readonly HttpClient http2Client = FriendlyHttp.CreateHttp2Client();
 
-        public KinoPub() : base(ModInit.premiumConf.KinoPub)
+        public KinoPub() : base(ModInit.siteConf.KinoPub)
         {
             requestInitialization += () =>
             {

@@ -1,73 +1,107 @@
 using Microsoft.AspNetCore.Mvc;
-using Newtonsoft.Json.Linq;
 using Online.Models.Alloha;
 using Shared.Attributes;
 using Shared.Models.Online.Settings;
+using System.Net.Http;
 
 namespace Online.Controllers
 {
     public class Alloha : BaseOnlineController<AllohaSettings>
     {
-        public Alloha() : base(ModInit.premiumConf.Alloha)
+        static readonly HttpClient http2Client = FriendlyHttp.CreateHttp2Client();
+
+        List<HeadersModel> bearer;
+
+        public Alloha() : base(ModInit.siteConf.Alloha)
         {
+            requestInitialization += () =>
+            {
+                if (init.httpversion == 2)
+                    httpHydra.RegisterHttp(http2Client);
+
+                bearer = HeadersModel.Init(
+                    ("Authorization", $"Bearer {init.token}"),
+                    ("Accept", "application/json")
+                );
+            };
+
             loadKitInitialization = (j, i, c) =>
             {
                 if (j.ContainsKey("m4s"))
                     i.m4s = c.m4s;
-
-                if (j.ContainsKey("linkhost"))
-                    i.linkhost = c.linkhost;
 
                 if (j.ContainsKey("reserve"))
                     i.reserve = c.reserve;
 
                 i.secret_token = c.secret_token;
                 i.token = c.token;
+
                 return i;
             };
         }
 
         [HttpGet]
-        [Staticache(1)]
+        [Staticache]
         [Route("lite/alloha")]
-        async public Task<ActionResult> Index(string orid, string imdb_id, long kinopoisk_id, string title, string original_title, int serial, string original_language, int year, string t, int s = -1, bool rjson = false, bool similar = false)
+        async public Task<ActionResult> Index(string orid, string imdb_id, long kinopoisk_id, string title, string original_title, int serial, string original_language, int year, int t = -1, int s = -1, bool rjson = false, bool similar = false)
         {
-            if (similar)
-                return await RouteToSpiderSearch(title, rjson);
+            if (string.IsNullOrEmpty(orid))
+            {
+                if (similar || (0 >= kinopoisk_id && string.IsNullOrEmpty(imdb_id)))
+                    return await RouteToSpiderSearch(title);
+            }
 
             if (await IsRequestBlocked(rch: !string.IsNullOrEmpty(init.secret_token)))
                 return badInitMsg;
 
-            var result = await search(orid, imdb_id, kinopoisk_id, title, serial, original_language, year);
-            if (result.category_id == 0)
-                return OnError("data");
+            #region search
+        rhubFallback:
 
-            if (result.data == null)
-                return Ok();
+            string memKey = string.IsNullOrEmpty(orid)
+                ? $"alloha:search:{imdb_id}:{kinopoisk_id}"
+                : $"alloha:search:{orid}";
 
-            JToken data = result.data;
+            var cache = await InvokeCacheResult<ContentRoot>(memKey, TimeSpan.FromHours(4), async e =>
+            {
+                ContentRoot root = !string.IsNullOrEmpty(orid)
+                    ? await httpHydra.Get<ContentRoot>($"{init.apihost}/movies/token/{orid}", safety: true, newheaders: bearer)
+                    : await httpHydra.Get<ContentRoot>($"{init.apihost}/movies/search?imdb={imdb_id}&kp={kinopoisk_id}", safety: true, newheaders: bearer);
 
+                if (root?.data?.category?.slug != null)
+                    return e.Success(root);
+
+                return e.Fail("root", refresh_proxy: true);
+            });
+
+            if (IsRhubFallback(cache))
+                goto rhubFallback;
+
+            if (!cache.IsSuccess)
+                return OnError(cache.ErrorMsg);
+            #endregion
+
+            MediaItem data = cache.Value.data;
             string defaultargs = $"&orid={orid}&imdb_id={imdb_id}&kinopoisk_id={kinopoisk_id}&title={HttpUtility.UrlEncode(title)}&original_title={HttpUtility.UrlEncode(original_title)}&serial={serial}&year={year}&original_language={original_language}";
 
-            if (result.category_id is 1 or 3)
+            if (cache.Value.data.category.slug is "movie" or "anime")
             {
                 #region Фильм
                 var mtpl = new MovieTpl(title, original_title);
-                bool directors_cut = data.Value<bool>("available_directors_cut");
+                bool directors_cut = data.flags.directors_cut;
 
-                foreach (var translation in data.Value<JObject>("translation_iframe").ToObject<Dictionary<string, Dictionary<string, object>>>())
+                foreach (var translation in data.translations)
                 {
-                    string link = $"{host}/lite/alloha/video?t={translation.Key}&token_movie={result.data.Value<string>("token_movie")}" + defaultargs;
+                    int trId = translation.id;
+                    string link = $"{host}/lite/alloha/video?t={trId}&token_movie={data.token}" + defaultargs;
                     string streamlink = accsArgs($"{link.Replace("/video", "/video.m3u8")}&play=true");
 
-                    bool uhd = false;
-                    if (translation.Value.TryGetValue("uhd", out object _uhd))
-                        uhd = _uhd.ToString().ToLower() == "true" && init.m4s;
+                    bool uhd = translation.uhd && init.m4s;
+                    string quality = uhd ? "2160p" : translation.quality;
 
-                    if (directors_cut && translation.Key == "66")
-                        mtpl.Append("Режиссерская версия", $"{link}&directors_cut=true", "call", $"{streamlink}&directors_cut=true", voice_name: uhd ? "2160p" : translation.Value["quality"].ToString(), quality: uhd ? "2160p" : "");
+                    if (directors_cut && trId == 66)
+                        mtpl.Append("Режиссерская версия", $"{link}&directors_cut=true", "call", $"{streamlink}&directors_cut=true", voice_name: quality, quality: uhd ? "2160p" : "");
 
-                    mtpl.Append(translation.Value["name"].ToString(), link, "call", streamlink, voice_name: uhd ? "2160p" : translation.Value["quality"].ToString(), quality: uhd ? "2160p" : "");
+                    mtpl.Append(translation.name, link, "call", streamlink, voice_name: quality, quality: uhd ? "2160p" : "");
                 }
 
                 return ContentTpl(mtpl);
@@ -78,10 +112,10 @@ namespace Online.Controllers
                 #region Сериал
                 if (s == -1)
                 {
-                    var tpl = new SeasonTpl(result.data.Value<bool>("uhd") && init.m4s ? "2160p" : null);
+                    var tpl = new SeasonTpl(data.flags.uhd && init.m4s ? "2160p" : null);
 
-                    foreach (var season in data.Value<JObject>("seasons").ToObject<Dictionary<string, object>>().Reverse())
-                        tpl.Append($"{season.Key} сезон", $"{host}/lite/alloha?rjson={rjson}&s={season.Key}{defaultargs}", season.Key);
+                    foreach (var season in data.seasons.OrderBy(x => x.season))
+                        tpl.Append($"{season.season} сезон", $"{host}/lite/alloha?rjson={rjson}&s={season.season}{defaultargs}", season.season.ToString());
 
                     return ContentTpl(tpl);
                 }
@@ -89,23 +123,27 @@ namespace Online.Controllers
                 {
                     #region Перевод
                     var vtpl = new VoiceTpl();
-                    var temp_translation = new HashSet<string>();
+                    var temp_translation = new HashSet<int>();
 
-                    string activTranslate = t;
+                    int activTranslate = t;
+                    var selectedSeason = data.seasons?.FirstOrDefault(x => x.season == s);
+                    if (selectedSeason == null)
+                        return OnError("selectedSeason");
 
-                    foreach (var episodes in data.Value<JObject>("seasons").GetValue(s.ToString()).Value<JObject>("episodes").ToObject<Dictionary<string, Episode>>().Select(i => i.Value.translation))
+                    foreach (var episode in selectedSeason.episodes)
                     {
-                        foreach (var translation in episodes)
+                        foreach (var translation in episode.translations)
                         {
-                            if (temp_translation.Contains(translation.Value.translation) || translation.Value.translation.ToLower().Contains("субтитры"))
-                                continue;
+                            if (translation?.id > 0)
+                            {
+                                if (!temp_translation.Add(translation.id))
+                                    continue;
 
-                            temp_translation.Add(translation.Value.translation);
+                                if (activTranslate == -1)
+                                    activTranslate = translation.id;
 
-                            if (string.IsNullOrWhiteSpace(activTranslate))
-                                activTranslate = translation.Key;
-
-                            vtpl.Append(translation.Value.translation, activTranslate == translation.Key, $"{host}/lite/alloha?rjson={rjson}&s={s}&t={translation.Key}{defaultargs}");
+                                vtpl.Append(translation.name, activTranslate == translation.id, $"{host}/lite/alloha?rjson={rjson}&s={s}&t={translation.id}{defaultargs}");
+                            }
                         }
                     }
                     #endregion
@@ -113,15 +151,16 @@ namespace Online.Controllers
                     var etpl = new EpisodeTpl(vtpl);
                     string sArhc = s.ToString();
 
-                    foreach (var episode in data.Value<JObject>("seasons").GetValue(sArhc).Value<JObject>("episodes").ToObject<Dictionary<string, Episode>>().Reverse())
+                    foreach (var episode in selectedSeason.episodes)
                     {
-                        if (!string.IsNullOrWhiteSpace(activTranslate) && !episode.Value.translation.ContainsKey(activTranslate))
+                        if (episode.translations != null && !episode.translations.Any(x => x.id == activTranslate))
                             continue;
 
-                        string link = $"{host}/lite/alloha/video?t={activTranslate}&s={s}&e={episode.Key}&token_movie={result.data.Value<string>("token_movie")}" + defaultargs;
+                        string episodeNum = episode.episode.ToString();
+                        string link = $"{host}/lite/alloha/video?t={activTranslate}&s={s}&e={episodeNum}&token_movie={data.token}" + defaultargs;
                         string streamlink = accsArgs($"{link.Replace("/video", "/video.m3u8")}&play=true");
 
-                        etpl.Append($"{episode.Key} серия", title ?? original_title, sArhc, episode.Key, link, "call", streamlink: streamlink);
+                        etpl.Append($"{episodeNum} серия", title ?? original_title, sArhc, episodeNum, link, "call", streamlink: streamlink);
                     }
 
                     return ContentTpl(etpl);
@@ -140,7 +179,7 @@ namespace Online.Controllers
             if (await IsRequestBlocked(rch: !string.IsNullOrEmpty(init.secret_token), rch_check: !play))
                 return badInitMsg;
 
-            var cache = await InvokeCacheResult<JToken>($"alloha:view:stream:{init.secret_token}:{token_movie}:{t}:{s}:{e}:{init.m4s}:{directors_cut}", 10, async cacheEntry =>
+            var cache = await InvokeCacheResult<DirectData>($"alloha:view:stream:{init.secret_token}:{token_movie}:{t}:{s}:{e}:{init.m4s}:{directors_cut}", 20, async cacheEntry =>
             {
                 string userIp = requestInfo.IP;
                 if (init.localip || init.streamproxy)
@@ -168,14 +207,11 @@ namespace Online.Controllers
                     uri += "&directors_cut";
                 #endregion
 
-                var root = await httpHydra.Get<JObject>(uri, safety: true);
-                if (root == null)
-                    return cacheEntry.Fail("json", refresh_proxy: true);
+                var root = await httpHydra.Get<DirectRoot>(uri, safety: true);
+                if (root?.data == null)
+                    return cacheEntry.Fail("data", refresh_proxy: true);
 
-                if (!root.ContainsKey("data"))
-                    return cacheEntry.Fail("data");
-
-                return cacheEntry.Success(root["data"]);
+                return cacheEntry.Success(root.data);
             });
 
             if (!cache.IsSuccess)
@@ -186,31 +222,24 @@ namespace Online.Controllers
             #region subtitle
             var subtitles = new SubtitleTpl();
 
-            try
-            {
-                foreach (var sub in data["file"]["tracks"])
-                    subtitles.Append(sub.Value<string>("label"), sub.Value<string>("src"));
-            }
-            catch (System.Exception ex)
-            {
-                Serilog.Log.Error(ex, "{Class} {CatchId}", "Alloha", "id_vfiog35y");
-            }
+            foreach (var sub in data.file?.tracks ?? new List<Track>())
+                subtitles.Append(sub.label, sub.src);
             #endregion
 
             List<StreamQualityDto> streams = null;
 
-            foreach (var hlsSource in data["file"]["hlsSource"])
+            foreach (var hlsSource in data.file?.hlsSource ?? new List<HlsSource>())
             {
                 // first or default
-                if (streams == null || hlsSource.Value<bool>("default"))
+                if (streams == null || hlsSource.@default)
                 {
                     streams = new List<StreamQualityDto>(6);
 
-                    foreach (var q in hlsSource["quality"].ToObject<Dictionary<string, string>>())
+                    foreach (var q in hlsSource.quality ?? new Dictionary<string, string>())
                     {
                         string file = q.Value;
-                        if (init.reserve)
-                            file += " or " + hlsSource["reserve"][q.Key].ToString();
+                        if (init.reserve && hlsSource.reserve != null && hlsSource.reserve.TryGetValue(q.Key, out string reserve))
+                            file += " or " + reserve;
 
                         streams.Add(new StreamQualityDto(HostStreamProxy(file), $"{q.Key}p"));
                     }
@@ -232,9 +261,9 @@ namespace Online.Controllers
             #region segments
             var segments = new SegmentTpl();
 
-            var dfile = data["file"];
-            string skipTime = dfile.Value<string>("skipTime");
-            string removeTime = dfile.Value<string>("removeTime");
+            var dfile = data.file;
+            string skipTime = dfile?.skipTime;
+            string removeTime = dfile?.removeTime;
 
             if (skipTime != null && skipTime.Contains("-"))
             {
@@ -270,7 +299,7 @@ namespace Online.Controllers
         #region RouteToSpiderSearch
         [HttpGet]
         [Route("lite/alloha-search")]
-        async public Task<ActionResult> RouteToSpiderSearch(string title, bool rjson = false)
+        async public Task<ActionResult> RouteToSpiderSearch(string title)
         {
             if (string.IsNullOrWhiteSpace(title))
                 return OnError("title", gbcache: false);
@@ -278,13 +307,13 @@ namespace Online.Controllers
             if (await IsRequestBlocked(rch: !string.IsNullOrEmpty(init.token)))
                 return badInitMsg;
 
-            var cache = await InvokeCacheResult<JArray>($"alloha:search:{title}", 40, async e =>
+            var cache = await InvokeCacheResult<List<MediaItem>>($"alloha:search:{title}", TimeSpan.FromHours(4), async e =>
             {
-                var root = await httpHydra.Get<JObject>($"{init.apihost}/?token={init.token}&name={HttpUtility.UrlEncode(title)}&list", safety: true);
-                if (root == null || !root.ContainsKey("data"))
+                var root = await httpHydra.Get<SearchListRoot>($"{init.apihost}/movies/name/list?name={HttpUtility.UrlEncode(title)}", safety: true, newheaders: bearer);
+                if (root?.data == null)
                     return e.Fail("data", refresh_proxy: true);
 
-                return e.Success(root["data"].ToObject<JArray>());
+                return e.Success(root.data);
             });
 
             return ContentTpl(cache, () =>
@@ -293,89 +322,12 @@ namespace Online.Controllers
 
                 foreach (var j in cache.Value)
                 {
-                    string uri = $"{host}/lite/alloha?orid={j.Value<string>("token_movie")}";
-                    stpl.Append(j.Value<string>("name") ?? j.Value<string>("original_name"), j.Value<int>("year").ToString(), string.Empty, uri, PosterApi.Size(j.Value<string>("poster")));
+                    string uri = $"{host}/lite/alloha?orid={j.token}";
+                    stpl.Append(j.name ?? j.original_name, j.year.ToString(), string.Empty, uri, PosterApi.Size(j.poster));
                 }
 
                 return stpl;
             });
-        }
-        #endregion
-
-
-        #region search
-        async ValueTask<(bool refresh_proxy, int category_id, JToken data)> search(string token_movie, string imdb_id, long kinopoisk_id, string title, int serial, string original_language, int year)
-        {
-            string memKey = $"alloha:view:{kinopoisk_id}:{imdb_id}";
-            if (0 >= kinopoisk_id && string.IsNullOrEmpty(imdb_id))
-                memKey = $"alloha:viewsearch:{title}:{serial}:{original_language}:{year}";
-
-            if (!string.IsNullOrEmpty(token_movie))
-                memKey = $"alloha:view:{token_movie}";
-
-            JObject root = null;
-
-            if (!hybridCache.TryGetValue(memKey, out (int category_id, JToken data) res))
-            {
-                if (memKey.Contains(":viewsearch:"))
-                {
-                    if (string.IsNullOrWhiteSpace(title) || year == 0)
-                        return default;
-
-                    root = await httpHydra.Get<JObject>($"{init.apihost}/?token={init.token}&name={HttpUtility.UrlEncode(title)}&list={(serial == 1 ? "serial" : "movie")}", safety: true);
-                    if (root == null)
-                        return (true, 0, null);
-
-                    if (root.ContainsKey("data"))
-                    {
-                        string stitle = title.ToLowerAndTrim();
-
-                        foreach (var item in root["data"])
-                        {
-                            if (item.Value<string>("name")?.ToLowerAndTrim() == stitle)
-                            {
-                                int y = item.Value<int>("year");
-                                if (y > 0 && (y == year || y == (year - 1) || y == (year + 1)))
-                                {
-                                    if (original_language == "ru" && item.Value<string>("country")?.ToLowerAndTrim() != "россия")
-                                        continue;
-
-                                    res.data = item;
-                                    res.category_id = item.Value<int>("category_id");
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    if (!string.IsNullOrEmpty(imdb_id))
-                        root = await httpHydra.Get<JObject>($"{init.apihost}/?token={init.token}&imdb={imdb_id}&token_movie={token_movie}", safety: true);
-
-                    if ((root == null || !root.ContainsKey("data")) && kinopoisk_id > 0)
-                        root = await httpHydra.Get<JObject>($"{init.apihost}/?token={init.token}&kp={kinopoisk_id}&token_movie={token_movie}", safety: true);
-
-                    if (root == null)
-                        return (true, 0, null);
-
-                    if (root.ContainsKey("data"))
-                    {
-                        res.data = root.GetValue("data");
-                        res.category_id = res.data.Value<int>("category");
-                    }
-                }
-
-                if (res.data != null)
-                    proxyManager?.Success();
-
-                if (res.data != null || (root.ContainsKey("error_info") && root.Value<string>("error_info") == "not movie"))
-                    hybridCache.Set(memKey, res, cacheTime(res.category_id is 1 or 3 ? 120 : 40));
-                else
-                    hybridCache.Set(memKey, res, cacheTime(2));
-            }
-
-            return (false, res.category_id, res.data);
         }
         #endregion
     }

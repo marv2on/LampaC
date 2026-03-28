@@ -5,6 +5,8 @@ using Shared.Models.Events;
 using Shared.Models.Module;
 using Shared.Models.Module.Interfaces;
 using System.Collections.Generic;
+using LampaWeb.Models;
+using LampaWeb.Services;
 
 namespace LampaWeb
 {
@@ -27,6 +29,12 @@ namespace LampaWeb
             LampaCron.Start();
         }
 
+        public void Dispose()
+        {
+            LampaCron.Stop();
+            EventListener.UpdateInitFile -= updateConf;
+        }
+
         void updateConf()
         {
             conf = ModuleInvoke.Init("LampaWeb", new ModuleConf()
@@ -36,18 +44,12 @@ namespace LampaWeb
                 basetag = true,
                 index = "lampa-main/index.html",
                 git = "yumata/lampa",
-                tree = "b5de4bd96e6bc2ec12b8926a51355ba49e8c396f",
+                tree = "b69ed883d2911e548d85d83459174f527d841581",
                 limit_map = new List<WafLimitRootMap>()
                 {
                     new("^/(extensions|testaccsdb|msx/)", new WafLimitMap { limit = 10, second = 1 })
                 }
             });
-        }
-
-        public void Dispose()
-        {
-            LampaCron.Stop();
-            EventListener.UpdateInitFile -= updateConf;
         }
     }
 }

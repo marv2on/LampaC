@@ -23,6 +23,11 @@ namespace Catalog
                 CoreInit.conf.WAF.limit_map.Insert(0, m);
         }
 
+        public void Dispose()
+        {
+            EventListener.UpdateInitFile -= updateConf;
+        }
+
         void updateConf()
         {
             conf = ModuleInvoke.Init("Catalog", new ModuleBaseConf()
@@ -32,11 +37,6 @@ namespace Catalog
                     new("^/catalog/", new WafLimitMap { limit = 10, second = 1 })
                 }
             });
-        }
-
-        public void Dispose()
-        {
-            EventListener.UpdateInitFile -= updateConf;
         }
 
 

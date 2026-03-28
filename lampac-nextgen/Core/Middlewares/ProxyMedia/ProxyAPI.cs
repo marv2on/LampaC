@@ -37,6 +37,12 @@ namespace Core.Middlewares
         public static int Stat_ContCacheFiles
             => fileWatcher.FilesCount;
 
+        static async Task InvokeProxyApiCreateHttpRequestHandlers(EventProxyApiCreateHttpRequest eventArgs)
+        {
+            foreach (Func<EventProxyApiCreateHttpRequest, Task> handler in EventListener.ProxyApiCreateHttpRequest.GetInvocationList())
+                await handler(eventArgs).ConfigureAwait(false);
+        }
+
         public static void Initialization()
         {
             CacheFileWatcher.Configure("hls", CoreInit.conf.serverproxy.cache_hls);
@@ -98,9 +104,18 @@ namespace Core.Middlewares
             #endregion
 
             #region cacheFiles
-            (string uriKey, string contentType) cacheStream = EventListener.ProxyApiCacheStream != null
-                ? EventListener.ProxyApiCacheStream.Invoke(new EventProxyApiCacheStream(httpContext, decryptLink))
-                : default;
+            (string uriKey, string contentType) cacheStream = default;
+
+            if (EventListener.ProxyApiCacheStream != null)
+            {
+                var em = new EventProxyApiCacheStream(httpContext, decryptLink);
+                foreach (Func<EventProxyApiCacheStream, (string uriKey, string contentType)> handler in EventListener.ProxyApiCacheStream.GetInvocationList())
+                {
+                    var res = handler(em);
+                    if (!string.IsNullOrWhiteSpace(res.uriKey))
+                        cacheStream = res;
+                }
+            }
 
             if (cacheStream.uriKey != null && init.showOrigUri)
                 httpContext.Response.Headers["PX-CacheStream"] = cacheStream.uriKey;
@@ -203,7 +218,7 @@ namespace Core.Middlewares
                                 if (EventListener.ProxyApiCreateHttpRequest != null)
                                 {
                                     var em = new EventProxyApiCreateHttpRequest(decryptLink.plugin, httpContext.Request, decryptLink.headers, new Uri(servUri), requestor);
-                                    await EventListener.ProxyApiCreateHttpRequest.Invoke(em).ConfigureAwait(false);
+                                    await InvokeProxyApiCreateHttpRequestHandlers(em).ConfigureAwait(false);
                                 }
 
                                 using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(7)))
@@ -237,7 +252,7 @@ namespace Core.Middlewares
                         if (EventListener.ProxyApiCreateHttpRequest != null)
                         {
                             var em = new EventProxyApiCreateHttpRequest(decryptLink.plugin, httpContext.Request, decryptLink.headers, new Uri(servUri), request);
-                            await EventListener.ProxyApiCreateHttpRequest.Invoke(em).ConfigureAwait(false);
+                            await InvokeProxyApiCreateHttpRequestHandlers(em).ConfigureAwait(false);
                         }
 
                         using (var ctsHttp = CancellationTokenSource.CreateLinkedTokenSource(httpContext.RequestAborted))

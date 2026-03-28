@@ -17,7 +17,7 @@ namespace Online.Controllers
 
         (RezkaInvoke invk, string cookie, string log) onrezka;
 
-        public RezkaPremium() : base(ModInit.premiumConf.RezkaPrem)
+        public RezkaPremium() : base(ModInit.siteConf.RezkaPrem)
         {
             #region genUid
             if (machineId == null)

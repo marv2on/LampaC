@@ -74,6 +74,12 @@ namespace JacRed
             });
         }
 
+        public void Dispose()
+        {
+            IsDispose = true;
+            EventListener.UpdateInitFile -= updateConf;
+        }
+
         void updateConf()
         {
             conf = ModuleInvoke.Init("JacRed", new JacRedConf()
@@ -87,12 +93,6 @@ namespace JacRed
                     new("^/api/(v1.0|v2.0)/", new WafLimitMap { limit = 10, second = 1 })
                 }
             });
-        }
-
-        public void Dispose()
-        {
-            IsDispose = true;
-            EventListener.UpdateInitFile -= updateConf;
         }
     }
 }

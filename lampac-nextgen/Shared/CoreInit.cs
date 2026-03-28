@@ -25,8 +25,6 @@ namespace Shared
 
         public static bool Win32NT => Environment.OSVersion.Platform == PlatformID.Win32NT;
 
-        public static List<(string path, int minute)> FileCacheCron = new List<(string path, int minute)>();
-
         public static HashSet<string> BaseModPathWhiteList = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         public static HashSet<string> BaseModValidQueryValueWhiteList = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -67,7 +65,11 @@ namespace Shared
                                 CurrentConf = JObject.FromObject(conf);
                                 lastUpdateConf = lwtConf > lwtYaml ? lwtConf : lwtYaml;
 
-                                EventListener.UpdateInitFile?.Invoke();
+                                if (EventListener.UpdateInitFile != null)
+                                {
+                                    foreach (Action handler in EventListener.UpdateInitFile.GetInvocationList())
+                                        handler();
+                                }
 
                                 string init = JsonConvert.SerializeObject(CurrentConf, Formatting.Indented, new JsonSerializerSettings()
                                 {
@@ -219,7 +221,7 @@ namespace Shared
 
         public string omdbapi_key;
 
-        public string corsehost { get; set; } = "https://cors.lampac.workers.dev";
+        public string corsehost { get; set; } = "";
 
         public BaseModule BaseModule { get; set; } = new BaseModule()
         {
@@ -239,7 +241,7 @@ namespace Shared
 
         public PoolConf pool { get; set; } = new PoolConf()
         {
-            BufferValidityMinutes = 60,
+            BufferValidityMinutes = 180,
             BufferMax = 500_000000, // 500mb
             BufferByteSmallMaxCount = 100,
             BufferByteLargeMaxCount = 100,
@@ -430,7 +432,7 @@ namespace Shared
             //}
         };
 
-        public IReadOnlyCollection<OverrideResponse> overrideResponse { get; set; }
+        public List<OverrideResponse> overrideResponse { get; set; }
         //{
         //    new OverrideResponse()
         //    {

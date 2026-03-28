@@ -228,7 +228,7 @@ namespace Core
 
             foreach (string modfolder in new string[] { "mods", "module" })
             {
-                if (Directory.Exists($"{modfolder}/"))
+                if (Directory.Exists(modfolder))
                 {
                     #region module references
                     string referencesPath = Path.Combine(Environment.CurrentDirectory, modfolder, "references");
@@ -255,7 +255,7 @@ namespace Core
                     #endregion
 
                     #region *.dll
-                    foreach (string path in Directory.GetFiles($"{modfolder}/", "*.dll"))
+                    foreach (string path in Directory.GetFiles(modfolder, "*.dll"))
                     {
                         try
                         {
@@ -276,7 +276,20 @@ namespace Core
                     #endregion
 
                     #region compilation
-                    foreach (string folderMod in Directory.GetDirectories($"{modfolder}/"))
+                    List<string> compilationFolders = new();
+
+                    foreach (string folderMod in Directory.GetDirectories(Path.Combine(AppContext.BaseDirectory, modfolder)))
+                    {
+                        if (File.Exists(Path.Combine(folderMod, "manifest.json")))
+                            compilationFolders.Add(folderMod);
+                        else
+                        {
+                            foreach (string recurseMod in Directory.GetDirectories(folderMod))
+                                compilationFolders.Add(recurseMod);
+                        }
+                    }
+
+                    foreach (string folderMod in compilationFolders)
                     {
                         string folderName = Path.GetFileName(folderMod);
                         if (skipCompilationFolders.Contains(folderName))
@@ -285,23 +298,26 @@ namespace Core
                             continue;
                         }
 
-                        string manifest = Path.Combine(Environment.CurrentDirectory, folderMod, "manifest.json");
+                        string manifest = Path.Combine(folderMod, "manifest.json");
                         if (!File.Exists(manifest))
                             continue;
 
                         var mod = JsonConvert.DeserializeObject<RootModule>(File.ReadAllText(manifest));
 
                         mod.name = folderName;
-                        mod.path = modfolder;
+                        mod.path = folderMod;
 
                         if (!mod.enable || CoreInit.modules.FirstOrDefault(i => i.name == mod.name) != null)
                             continue;
 
                         var build = CSharpEval.Compilation(mod);
                         if (build.assembly == null)
+                        {
+                            Console.WriteLine("\nerror compilation " + folderMod);
                             throw new Exception();
+                        }
 
-                        Console.WriteLine($"compilation {modfolder}: {mod.name}");
+                        Console.WriteLine($"compilation {folderName}");
 
                         mod.assembly = build.assembly;
                         mod.assemblyLoadContext = build.alc;
@@ -335,6 +351,8 @@ namespace Core
                             mvcBuilder = mvcBuilder,
                             services = services
                         });
+
+                        Console.WriteLine($"configure module: {mod.name}");
                     }
                 }
                 catch (System.Exception ex)
@@ -343,6 +361,8 @@ namespace Core
                     throw new Exception();
                 }
             }
+
+            Console.WriteLine();
             #endregion
         }
         #endregion
@@ -383,7 +403,7 @@ namespace Core
                 }
                 catch (System.Exception ex)
                 {
-                    Console.WriteLine($"Module {mod.name}: {ex.Message}\n\n");
+                    Console.WriteLine($"\nModule {mod.name}: {ex.Message}\n\n");
                     throw new Exception();
                 }
             }
@@ -735,9 +755,8 @@ namespace Core
             // Вызываем интерфейсный метод
             initInstance.Loaded(new InitspaceModel()
             {
-                path = $"{mod.path}/{mod.name}",
+                path = mod.path,
                 nws = new NativeWebSocket(),
-                memoryCache = memoryCache,
                 configuration = Configuration,
                 services = serviceCollection,
                 app = app ?? _app

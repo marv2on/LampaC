@@ -136,7 +136,7 @@ namespace Tracks.Controllers
                     else
                     {
                         // заглушка
-                        hybridCache.Set(memKey, outPut, DateTime.Now.AddMinutes(5), inmemory: false);
+                        hybridCache.Set(memKey, outPut, DateTime.Now.AddMinutes(5), inmemory: true);
                     }
                 }
             }

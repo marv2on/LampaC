@@ -15,6 +15,8 @@ namespace Shared.Models.Module
 
         public string[] references { get; set; }
 
+        public string[] syntaxPaths { get; set; }
+
 
         public Assembly assembly { get; set; }
 

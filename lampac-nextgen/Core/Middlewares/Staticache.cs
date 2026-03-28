@@ -18,7 +18,7 @@ using System.Threading.Tasks;
 
 namespace Core.Middlewares
 {
-    public record CacheModel(DateTime ex, string contentType);
+    public record CacheModel(DateTimeOffset ex, string contentType, string inFile);
 
     public record StaticacheFeature(StaticacheRoute route, string cachekey);
 
@@ -41,10 +41,7 @@ namespace Core.Middlewares
             {
                 try
                 {
-                    if (inFile.EndsWith(".gz"))
-                        continue;
-
-                    // cacheKey-<time>.<type>(.gz|br)?
+                    // cacheKey-<time>.<type>
                     ReadOnlySpan<char> fileName = inFile.AsSpan();
                     int lastSlash = fileName.LastIndexOfAny('\\', '/');
                     if (lastSlash >= 0)
@@ -90,7 +87,7 @@ namespace Core.Middlewares
                         ? "text/html; charset=utf-8"
                         : "application/json; charset=utf-8";
 
-                    var ex = DateTime.FromFileTime(fileTime);
+                    var ex = DateTimeOffset.FromUnixTimeMilliseconds(fileTime);
 
                     if (now > ex)
                     {
@@ -98,7 +95,7 @@ namespace Core.Middlewares
                         continue;
                     }
 
-                    cacheFiles.TryAdd(cachekey, new(ex, contentType));
+                    cacheFiles.TryAdd(cachekey, new(ex, contentType, inFile));
                 }
                 catch
                 {
@@ -111,7 +108,7 @@ namespace Core.Middlewares
         {
             try
             {
-                var cutoff = DateTime.Now;
+                var cutoff = DateTimeOffset.Now;
 
                 foreach (var _c in cacheFiles)
                 {
@@ -168,19 +165,26 @@ namespace Core.Middlewares
 
             if (EventListener.Staticache != null)
             {
-                bool next = EventListener.Staticache.Invoke(new EventStaticache(httpContext, requestInfo));
-                if (!next)
-                    return _next(httpContext);
+                var em = new EventStaticache(httpContext, requestInfo);
+
+                foreach (Func<EventStaticache, bool> handler in EventListener.Staticache.GetInvocationList())
+                {
+                    if (!handler(em))
+                        return _next(httpContext);
+                }
             }
 
             StaticacheRoute route = null;
 
-            foreach (var r in init.routes)
+            if (init.routes?.Count > 0)
             {
-                if (Regex.IsMatch(httpContext.Request.Path.Value, r.pathRex, RegexOptions.IgnoreCase))
+                foreach (var r in init.routes)
                 {
-                    route = r;
-                    break;
+                    if (Regex.IsMatch(httpContext.Request.Path.Value, r.pathRex, RegexOptions.IgnoreCase))
+                    {
+                        route = r;
+                        break;
+                    }
                 }
             }
 
@@ -207,19 +211,20 @@ namespace Core.Middlewares
                 route = new StaticacheRoute(httpContext.Request.Path.Value, staticache.cacheMinutes, queryKeys);
             }
 
+            if (0 >= route.cacheMinutes)
+                route.cacheMinutes = 1;
+
             string cachekey = getQueryKeys(httpContext, route.queryKeys);
 
-            if (cacheFiles.TryGetValue(cachekey, out var _r))
+            if (cacheFiles.TryGetValue(cachekey, out CacheModel _r))
             {
                 httpContext.Response.Headers["X-StatiCache-Status"] = "HIT";
                 httpContext.Response.ContentType = _r.contentType;
 
-                string cachefile = getFilePath(cachekey, _r.ex, _r.contentType);
-
                 using (var cts = CancellationTokenSource.CreateLinkedTokenSource(httpContext.RequestAborted))
                 {
                     cts.CancelAfter(TimeSpan.FromSeconds(CoreInit.conf.listen.ResponseCancelAfter));
-                    return httpContext.Response.SendFileAsync(cachefile, cts.Token);
+                    return httpContext.Response.SendFileAsync(_r.inFile, cts.Token);
                 }
             }
 
@@ -235,6 +240,12 @@ namespace Core.Middlewares
 
             var sb = StringBuilderPool.ThreadInstance;
 
+            sb.Append(httpContext.Request.Scheme);
+            sb.Append(":");
+
+            sb.Append(httpContext.Request.Host.Value);
+            sb.Append(":");
+
             sb.Append(httpContext.Request.Path.Value);
             sb.Append(":");
 
@@ -249,7 +260,7 @@ namespace Core.Middlewares
                 }
             }
 
-            if (httpContext.Request.Query.TryGetValue("rjson", out StringValues rjson) && rjson.Count > 0)
+            if (!keys.Contains("rjson") && httpContext.Request.Query.TryGetValue("rjson", out StringValues rjson) && rjson.Count > 0)
             {
                 sb.Append("rjson:");
                 sb.Append(rjson[0]);
@@ -258,9 +269,9 @@ namespace Core.Middlewares
             return CrypTo.md5(sb);
         }
 
-        public static string getFilePath(string cachekey, DateTime ex, string contentType)
+        public static string getFilePath(string cachekey, DateTimeOffset ex, string contentType)
         {
-            return $"cache/static/{cachekey}-{ex.ToFileTime()}.{(contentType?.Contains("text/html") == true ? "html" : "json")}";
+            return $"cache/static/{cachekey}-{ex.ToUnixTimeMilliseconds()}.{(contentType?.Contains("text/html") == true ? "html" : "json")}";
         }
     }
 }

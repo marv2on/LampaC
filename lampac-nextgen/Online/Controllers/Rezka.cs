@@ -71,7 +71,7 @@ namespace Online.Controllers
                 return badInitMsg;
 
             #region Initialization
-            if (init.premium || ModInit.premiumConf.RezkaPrem.enable)
+            if (init.premium || ModInit.siteConf.RezkaPrem.enable)
                 return ShowError("Замените Rezka на RezkaPrem в init.conf");
 
             if (string.IsNullOrWhiteSpace(href) && string.IsNullOrWhiteSpace(title))

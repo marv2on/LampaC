@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Primitives;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Shared.Attributes;
 using Shared.Models;
 using Shared.Models.AppConf;
 using Shared.Models.Events;
@@ -108,7 +109,19 @@ namespace Shared
             if (!memoryCache.TryGetValue(key, out string userIp))
             {
                 if (EventListener.MyLocalIp != null)
-                    userIp = await EventListener.MyLocalIp.Invoke(new EventMyLocalIp(requestInfo, HttpContext.Request, HttpContext, hybridCache));
+                {
+                    var em = new EventMyLocalIp(requestInfo, HttpContext.Request, HttpContext);
+
+                    foreach (Func<EventMyLocalIp, Task<string>> handler in EventListener.MyLocalIp.GetInvocationList())
+                    {
+                        string eip = await handler(em);
+                        if (!string.IsNullOrEmpty(eip))
+                        {
+                            userIp = eip;
+                            break;
+                        }
+                    }
+                }
 
                 if (string.IsNullOrEmpty(userIp))
                 {
@@ -206,9 +219,17 @@ namespace Shared
 
             if (EventListener.HttpHeaders != null)
             {
-                var eventHeaders = EventListener.HttpHeaders.Invoke(new EventControllerHttpHeaders(site, tempHeaders, requestInfo, HttpContext.Request, HttpContext));
-                if (eventHeaders != null)
-                    tempHeaders = eventHeaders;
+                var em = new EventControllerHttpHeaders(site, tempHeaders, requestInfo, HttpContext.Request, HttpContext);
+
+                foreach (Func<EventControllerHttpHeaders, Dictionary<string, string>> handler in EventListener.HttpHeaders.GetInvocationList())
+                {
+                    var eventHeaders = handler.Invoke(em);
+                    if (eventHeaders != null)
+                    {
+                        tempHeaders = eventHeaders;
+                        break;
+                    }
+                }
             }
 
             return HeadersModel.InitOrNull(tempHeaders);
@@ -251,9 +272,14 @@ namespace Shared
 
             if (EventListener.HostImgProxy != null)
             {
-                string eventUri = EventListener.HostImgProxy.Invoke(new EventHostImgProxy(requestInfo, HttpContext, uri, height, headers, conf.plugin));
-                if (eventUri != null)
-                    return eventUri;
+                var em = new EventHostImgProxy(requestInfo, HttpContext, uri, height, headers, conf.plugin);
+
+                foreach (Func<EventHostImgProxy, string> handler in EventListener.HostImgProxy.GetInvocationList())
+                {
+                    string eventUri = handler.Invoke(em);
+                    if (eventUri != null)
+                        return eventUri;
+                }
             }
 
             if ((width == 0 && height == 0) || (conf.plugin != null && init.rsize_disable != null && init.rsize_disable.Contains(conf.plugin)))
@@ -316,9 +342,14 @@ namespace Shared
 
             if (EventListener.HostStreamProxy != null)
             {
-                string _eventUri = EventListener.HostStreamProxy.Invoke(new EventHostStreamProxy(conf, uri, headers, proxy, requestInfo, HttpContext, hybridCache));
-                if (_eventUri != null)
-                    return _eventUri;
+                var em = new EventHostStreamProxy(conf, uri, headers, proxy, requestInfo, HttpContext);
+
+                foreach (Func<EventHostStreamProxy, string> handler in EventListener.HostStreamProxy.GetInvocationList())
+                {
+                    string eventUri = handler.Invoke(em);
+                    if (eventUri != null)
+                        return eventUri;
+                }
             }
 
             if (conf.rhub && !conf.rhub_streamproxy)
@@ -452,11 +483,12 @@ namespace Shared
         async public ValueTask<T> InvokeBaseCache<T>(string key, TimeSpan time, RchClient rch, Func<Task<T>> onget, ProxyManager proxyManager = null, bool? memory = null, JsonTypeInfo<T> jsonType = null, bool textJson = false)
         {
             #region cache
-            if (hybridCache.ContainsKey(key, out T entryValue))
+            if (hybridCache.ContainsKey(key, out T entryValue, out DateTimeOffset cachEx))
             {
                 if (entryValue != null && !entryValue.Equals(default(T)))
                 {
                     HttpContext.Response.Headers["X-Invoke-Cache"] = "HIT";
+                    UpdateStatiCacheFeatures(cachEx);
                     return entryValue;
                 }
                 else
@@ -465,6 +497,7 @@ namespace Shared
                     if (entry != null && entry.success)
                     {
                         HttpContext.Response.Headers["X-Invoke-Cache"] = "HIT";
+                        UpdateStatiCacheFeatures(cachEx);
                         return entry.value;
                     }
                 }
@@ -482,11 +515,12 @@ namespace Shared
                     if (!_acquired)
                         return default;
 
-                    if (hybridCache.ContainsKey(key, out entryValue))
+                    if (hybridCache.ContainsKey(key, out entryValue, out cachEx))
                     {
                         if (entryValue != null && !entryValue.Equals(default(T)))
                         {
                             HttpContext.Response.Headers["X-Invoke-Cache"] = "HIT";
+                            UpdateStatiCacheFeatures(cachEx);
                             return entryValue;
                         }
                     }
@@ -507,6 +541,8 @@ namespace Shared
                     proxyManager?.Success();
 
                 hybridCache.Set(key, val, time, memory);
+                UpdateStatiCacheFeatures(DateTimeOffset.Now.Add(time));
+
                 return val;
             }
             finally
@@ -520,11 +556,12 @@ namespace Shared
         async public ValueTask<CacheResult<T>> InvokeBaseCacheResult<T>(string key, TimeSpan time, RchClient rch, ProxyManager proxyManager, Func<CacheResult<T>, Task<CacheResult<T>>> onget, bool? memory = null, JsonTypeInfo<T> jsonType = null, bool textJson = false)
         {
             #region cache
-            if (hybridCache.ContainsKey(key, out T entryValue))
+            if (hybridCache.ContainsKey(key, out T entryValue, out DateTimeOffset cachEx))
             {
                 if (entryValue != null && !entryValue.Equals(default(T)))
                 {
                     HttpContext.Response.Headers["X-Invoke-Cache"] = "HIT";
+                    UpdateStatiCacheFeatures(cachEx);
 
                     return new CacheResult<T>()
                     {
@@ -538,6 +575,7 @@ namespace Shared
                     if (entry != null && entry.success)
                     {
                         HttpContext.Response.Headers["X-Invoke-Cache"] = "HIT";
+                        UpdateStatiCacheFeatures(cachEx);
 
                         return new CacheResult<T>()
                         {
@@ -561,11 +599,12 @@ namespace Shared
                     if (!_acquired)
                         return new CacheResult<T>() { IsSuccess = false, ErrorMsg = "semaphore" };
 
-                    if (hybridCache.ContainsKey(key, out entryValue))
+                    if (hybridCache.ContainsKey(key, out entryValue, out cachEx))
                     {
                         if (entryValue != null && !entryValue.Equals(default(T)))
                         {
                             HttpContext.Response.Headers["X-Invoke-Cache"] = "HIT";
+                            UpdateStatiCacheFeatures(cachEx);
 
                             return new CacheResult<T>()
                             {
@@ -600,11 +639,29 @@ namespace Shared
                     proxyManager?.Success();
 
                 hybridCache.Set(key, val.Value, time, memory);
+                UpdateStatiCacheFeatures(DateTimeOffset.Now.Add(time));
+
                 return new CacheResult<T>() { IsSuccess = true, Value = val.Value };
             }
             finally
             {
                 semaphore?.Release();
+            }
+        }
+        #endregion
+
+        #region UpdateStatiCacheFeatures
+        StatiCacheEntry _statiCacheEntry;
+
+        void UpdateStatiCacheFeatures(DateTimeOffset ex)
+        {
+            if (!CoreInit.conf.Staticache.enable)
+                return;
+
+            if (_statiCacheEntry == null || _statiCacheEntry.ex > ex)
+            {
+                _statiCacheEntry = new StatiCacheEntry(ex);
+                HttpContext.Features.Set(_statiCacheEntry);
             }
         }
         #endregion
@@ -870,7 +927,11 @@ namespace Shared
             if (_init.kit == false)
             {
                 if (EventListener.LoadKitInit != null)
-                    EventListener.LoadKitInit.Invoke(new EventLoadKit(null, clone, null, requestInfo, hybridCache));
+                {
+                    var em = new EventLoadKit(null, clone, null, requestInfo);
+                    foreach (Action<EventLoadKit> handler in EventListener.LoadKitInit.GetInvocationList())
+                        handler(em);
+                }
 
                 return clone;
             }
@@ -890,7 +951,11 @@ namespace Shared
             init.IsCloneable = true;
 
             if (EventListener.LoadKitInit != null)
-                EventListener.LoadKitInit.Invoke(new EventLoadKit(init, init, appinit, requestInfo, hybridCache));
+            {
+                var em = new EventLoadKit(init, init, appinit, requestInfo);
+                foreach (Action<EventLoadKit> handler in EventListener.LoadKitInit.GetInvocationList())
+                    handler(em);
+            }
 
             if (!init.kit || appinit == null || string.IsNullOrEmpty(init.plugin) || !appinit.ContainsKey(init.plugin))
                 return init;
@@ -993,7 +1058,11 @@ namespace Shared
             init.IsKitConf = true;
 
             if (EventListener.LoadKit != null)
-                EventListener.LoadKit.Invoke(new EventLoadKit(defaultinit, init, userconf, requestInfo, hybridCache));
+            {
+                var em = new EventLoadKit(defaultinit, init, userconf, requestInfo);
+                foreach (Action<EventLoadKit> handler in EventListener.LoadKit.GetInvocationList())
+                    handler(em);
+            }
 
             if (func != null)
                 return func.Invoke(userconf, init, userconf.ToObject<T>());

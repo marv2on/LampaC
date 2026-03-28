@@ -42,12 +42,13 @@ namespace SISI.Services
                     title = baba;
 
                 string cleanImg = img.Replace("\\", "").Replace("{ext}", "jpg");
+
                 var pl = new PlaylistItem()
                 {
                     name = title,
                     quality = row.Match("\"vq\":\"([^\"]+)\""),
                     video = $"https://{esid}.bcvcdn.com/hls/stream_{baba}/playlist.m3u8",
-                    picture = cleanImg.StartsWith("http") ? cleanImg : $"https:{cleanImg}",
+                    picture = cleanImg.StartsWith("http") ? cleanImg : $"https:{cleanImg}"
                 };
 
                 if (onplaylist != null)

@@ -1,5 +1,4 @@
 ﻿using DLNA.Controllers;
-using DLNA.CRON;
 using Shared;
 using Shared.Services;
 using Shared.Models.AppConf;
@@ -7,6 +6,7 @@ using Shared.Models.Events;
 using Shared.Models.Module;
 using Shared.Models.Module.Interfaces;
 using System.Collections.Generic;
+using DLNA.Services;
 
 namespace DLNA
 {
@@ -29,6 +29,12 @@ namespace DLNA
             TrackersCron.Start();
         }
 
+        public void Dispose()
+        {
+            EventListener.UpdateInitFile -= updateConf;
+            TrackersCron.Stop();
+        }
+
         void updateConf()
         {
             conf = ModuleInvoke.Init("DLNA", new ModuleConf()
@@ -44,12 +50,6 @@ namespace DLNA
                     new("^/dlna/", new WafLimitMap { limit = 50, second = 1 })
                 }
             });
-        }
-
-        public void Dispose()
-        {
-            EventListener.UpdateInitFile -= updateConf;
-            TrackersCron.Stop();
         }
     }
 }

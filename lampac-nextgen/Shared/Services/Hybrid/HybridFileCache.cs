@@ -44,7 +44,7 @@ namespace Shared.Services.Hybrid
             _clearTempDb = new Timer(ClearTempDb, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(5));
             _cleanupTimer = new Timer(ClearCacheFiles, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
 
-            var now = DateTime.Now;
+            var now = DateTimeOffset.Now;
 
             foreach (string dir in Directory.GetDirectories("cache/fdb"))
             {
@@ -69,7 +69,7 @@ namespace Shared.Services.Hybrid
                             continue;
                         }
 
-                        var ex = DateTime.FromFileTime(fileTime);
+                        var ex = DateTimeOffset.FromUnixTimeMilliseconds(fileTime);
 
                         if (now > ex)
                         {
@@ -84,6 +84,12 @@ namespace Shared.Services.Hybrid
                     }
                     catch (System.Exception ex)
                     {
+                        try
+                        {
+                            File.Delete(inFile);
+                        }
+                        catch { }
+
                         Log.Error(ex, "CatchId={CatchId}", "id_zbcq20sy");
                     }
                 }
@@ -118,7 +124,7 @@ namespace Shared.Services.Hybrid
                         try
                         {
                             int capacity = GetCapacity(tdb.Value.value);
-                            string path = $"{tdb.Key}-{tdb.Value.ex.ToFileTime()}-{capacity}";
+                            string path = $"{tdb.Key}-{tdb.Value.ex.ToUnixTimeMilliseconds()}-{capacity}";
                             Directory.CreateDirectory($"cache/fdb/{path[0]}");
                             string pathFile = $"cache/fdb/{path[0]}/{path}";
 
@@ -207,7 +213,7 @@ namespace Shared.Services.Hybrid
 
             try
             {
-                var now = DateTime.Now;
+                var now = DateTimeOffset.Now;
 
                 foreach (var cache in cacheFiles)
                 {
@@ -243,10 +249,14 @@ namespace Shared.Services.Hybrid
 
         #region ContainsKey
         public bool ContainsKey<T>(string key, out T value)
+            => ContainsKey(key, out value, out _);
+
+        public bool ContainsKey<T>(string key, out T value, out DateTimeOffset ex)
         {
             if (memoryCache.TryGetValue(key, out T _mv))
             {
                 value = _mv;
+                ex = default;
                 return true;
             }
 
@@ -254,14 +264,19 @@ namespace Shared.Services.Hybrid
             if (tempDb.TryGetValue(md5key, out var _temp))
             {
                 value = (T)_temp.value;
+                ex = _temp.ex;
                 return true;
             }
 
             value = default;
 
             if (cacheFiles.TryGetValue(md5key, out cacheEntry _cache))
-                return _cache.ex > DateTime.Now;
+            {
+                ex = _cache.ex;
+                return _cache.ex > DateTimeOffset.Now;
+            }
 
+            ex = default;
             return false;
         }
         #endregion
@@ -269,7 +284,7 @@ namespace Shared.Services.Hybrid
         #region TryGetValue
         public bool TryGetValue<TItem>(string key, out TItem value, JsonTypeInfo<TItem> jsonType = null, bool textJson = false)
         {
-            if (ContainsKey(key, out TItem entryValue))
+            if (ContainsKey(key, out TItem entryValue, out _))
             {
                 if (entryValue != null && !entryValue.Equals(default(TItem)))
                 {
@@ -329,7 +344,7 @@ namespace Shared.Services.Hybrid
                     if (!cacheFiles.TryGetValue(md5key, out cacheEntry _cache))
                         return default;
 
-                    if (DateTime.Now > _cache.ex)
+                    if (DateTimeOffset.Now > _cache.ex)
                     {
                         cacheFiles.TryRemove(md5key, out _);
                         return default;
@@ -475,7 +490,7 @@ namespace Shared.Services.Hybrid
                 return value;
 
             if (inmemory != true)
-                Console.WriteLine($"set memory: {key} / {DateTime.Now}");
+                Console.WriteLine($"set memory: {key} / {DateTimeOffset.Now}");
 
             return memoryCache.Set(key, value, absoluteExpiration);
         }
@@ -486,7 +501,7 @@ namespace Shared.Services.Hybrid
                 return value;
 
             if (inmemory != true)
-                Console.WriteLine($"set memory: {key} / {DateTime.Now}");
+                Console.WriteLine($"set memory: {key} / {DateTimeOffset.Now}");
 
             return memoryCache.Set(key, value, absoluteExpirationRelativeToNow);
         }
@@ -513,7 +528,7 @@ namespace Shared.Services.Hybrid
                 }
 
                 /// защита от асинхронных rch запросов которые приходят в рамках 12 секунд
-                /// дополнительный кеш для сериалов, что бы выборка сезонов/озвучки не дергала sql 
+                /// дополнительный кеш для сериалов, что бы выборка сезонов/озвучки не дергала sql
                 var extend = now.AddSeconds(Math.Max(15, CoreInit.conf.cache.extend));
 
                 if (extend >= absoluteExpiration || now.AddSeconds(CoreInit.conf.cache.extend + 60) >= absoluteExpiration)

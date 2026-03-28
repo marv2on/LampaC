@@ -18,7 +18,7 @@ namespace SISI.Controllers
         }
 
         [HttpGet]
-        [Staticache(6)]
+        [Staticache]
         [Route("chu")]
         async public Task<ActionResult> Index(string search, string sort, int pg = 1)
         {
@@ -52,7 +52,7 @@ namespace SISI.Controllers
 
 
         [HttpGet]
-        [Staticache(11)]
+        [Staticache]
         [Route("chu/potok")]
         async public Task<ActionResult> Index(string baba)
         {

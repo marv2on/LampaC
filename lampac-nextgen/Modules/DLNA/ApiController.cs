@@ -20,6 +20,7 @@ using System.Threading.Tasks;
 using System.Web;
 using IO = System.IO;
 using Shared.Services.Utilities;
+using DLNA.Services;
 
 namespace DLNA.Controllers
 {
@@ -729,7 +730,7 @@ namespace DLNA.Controllers
             {
                 InfoHash = i.InfoHashes.V1.ToHex(),
                 Name = i.Torrent?.Name ?? i.InfoHashes.V1.ToHex(),
-                //Engine = new 
+                //Engine = new
                 //{
                 //    i.Engine.ConnectionManager.HalfOpenConnections,
                 //    i.Engine.ConnectionManager.OpenConnections,

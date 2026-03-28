@@ -47,6 +47,8 @@ namespace Shared.Models.Events
 
         public static Func<EventStreamQualityFirts, StreamQualityDto?> StreamQualityFirts;
 
+        public static Func<EventOnlineApiQuality, string> OnlineApiQuality;
+
 
         public static Action<EventRchRegistry> RchRegistry;
 

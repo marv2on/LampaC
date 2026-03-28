@@ -9,7 +9,7 @@ namespace SISI.Controllers
         public BongaCams() : base(ModInit.siteConf.BongaCams) { }
 
         [HttpGet]
-        [Staticache(6)]
+        [Staticache]
         [Route("bgs")]
         async public Task<ActionResult> Index(string search, string sort, int pg = 1)
         {

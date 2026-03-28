@@ -10,7 +10,7 @@ namespace Online.Controllers
 {
     public class FilmixPartner : BaseOnlineController<FilmixSettings>
     {
-        public FilmixPartner() : base(ModInit.premiumConf.FilmixPartner) { }
+        public FilmixPartner() : base(ModInit.siteConf.FilmixPartner) { }
 
         [HttpGet]
         [Route("lite/fxapi")]
@@ -212,7 +212,7 @@ namespace Online.Controllers
         [Route("lite/fxapi/lowlevel/{*uri}")]
         async public Task<ActionResult> LowlevelApi(string uri)
         {
-            var init = ModInit.premiumConf.FilmixPartner;
+            var init = ModInit.siteConf.FilmixPartner;
 
             if (!init.enable)
                 return OnError("disable", gbcache: false);
@@ -265,7 +265,7 @@ namespace Online.Controllers
             if (string.IsNullOrWhiteSpace(title ?? original_title))
                 return null;
 
-            string uri = $"{ModInit.premiumConf.Filmix.host}/api/v2/search?story={HttpUtility.UrlEncode(title)}&user_dev_apk=2.0.1&user_dev_id=&user_dev_name=Xiaomi&user_dev_os=11&user_dev_token={init.token}&user_dev_vendor=Xiaomi";
+            string uri = $"{ModInit.siteConf.Filmix.host}/api/v2/search?story={HttpUtility.UrlEncode(title)}&user_dev_apk=2.0.1&user_dev_id=&user_dev_name=Xiaomi&user_dev_os=11&user_dev_token={init.token}&user_dev_vendor=Xiaomi";
 
             var root = await Http.Get<List<SearchModel>>(init.cors(uri), timeoutSeconds: 7, proxy: proxy, useDefaultHeaders: false, headers: HeadersModel.Init(
                 ("Accept-Encoding", "gzip")
@@ -319,7 +319,7 @@ namespace Online.Controllers
                 if (string.IsNullOrEmpty(story))
                     return null;
 
-                string uri = $"{ModInit.premiumConf.FilmixTV.host}/api-fx/list?search={HttpUtility.UrlEncode(story)}&limit=48";
+                string uri = $"{ModInit.siteConf.FilmixTV.host}/api-fx/list?search={HttpUtility.UrlEncode(story)}&limit=48";
 
                 var root = await Http.Get<JObject>(uri, proxy: proxy, timeoutSeconds: 5);
 
@@ -376,7 +376,7 @@ namespace Online.Controllers
 
         async ValueTask<string> getXFXTOKEN(string uid = null)
         {
-            var init = ModInit.premiumConf.FilmixPartner;
+            var init = ModInit.siteConf.FilmixPartner;
 
             if (serverip == null)
             {

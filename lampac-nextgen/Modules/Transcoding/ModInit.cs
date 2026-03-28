@@ -32,6 +32,12 @@ namespace Transcoding
             TranscodingService.Instance.Configure(conf);
         }
 
+        public void Dispose()
+        {
+            EventListener.UpdateInitFile -= updateConf;
+            TranscodingService.Instance.StopAll();
+        }
+
         void updateConf()
         {
             conf = ModuleInvoke.Init("transcoding", new ModuleConf()
@@ -45,12 +51,6 @@ namespace Transcoding
                     new("^/transcoding/", new WafLimitMap { limit = 50, second = 1 })
                 }
             });
-        }
-
-        public void Dispose()
-        {
-            EventListener.UpdateInitFile -= updateConf;
-            TranscodingService.Instance.StopAll();
         }
     }
 }
