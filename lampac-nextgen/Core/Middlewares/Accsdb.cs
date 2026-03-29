@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Memory;
 using Shared;
+using Shared.Attributes;
 using Shared.Models.Base;
 using Shared.Services.Utilities;
 using System;
@@ -15,7 +16,7 @@ namespace Core.Middlewares
 {
     public class Accsdb
     {
-        static readonly Regex rexAuthorize = new Regex("^/stats/", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        static readonly Regex rexAuthorize = new Regex("^/(stats|weblog|admin)/", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         static readonly Regex rexStaticAssets = new Regex("\\.(js|css|ico|png|svg|jpe?g|woff|webmanifest)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         static readonly Regex rexLockBypass = new Regex("^/(lifeevents|externalids|sisi/(bookmark|history))", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
@@ -39,12 +40,14 @@ namespace Core.Middlewares
             var requestInfo = httpContext.Features.Get<RequestModel>();
 
             #region Authorize
-            bool IsAuthorize = endpoint != null && endpoint.Metadata.GetMetadata<IAuthorizeData>() != null;
-            if (!IsAuthorize)
-                IsAuthorize = rexAuthorize.IsMatch("^/stats/");
+            bool IsAuthorize = endpoint != null && endpoint.Metadata.GetMetadata<IAuthorizeData>() != null
+                || rexAuthorize.IsMatch(httpContext.Request.Path.Value);
 
             if (IsAuthorize)
             {
+                if (endpoint != null && endpoint.Metadata.GetMetadata<AuthorizeAnonymousAttribute>() != null)
+                    return _next(httpContext);
+
                 if (httpContext.Request.Cookies.TryGetValue("accspasswd", out string passwd))
                 {
                     string ipKey = $"Accsdb:auth:IP:{requestInfo.IP}";
