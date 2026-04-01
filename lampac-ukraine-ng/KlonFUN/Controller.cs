@@ -31,6 +31,8 @@ namespace KlonFUN.Controllers
             if (!init.enable)
                 return Forbid();
 
+            TryEnableMagicApn(init);
+
             var invoke = new KlonFUNInvoke(init, hybridCache, OnLog, proxyManager, httpHydra);
 
             if (checksearch)
@@ -215,6 +217,24 @@ namespace KlonFUN.Controllers
             }
 
             return HostStreamProxy(init, link);
+        }
+
+        private void TryEnableMagicApn(OnlinesSettings init)
+        {
+            if (init == null
+                || init.apn != null
+                || init.streamproxy
+                || string.IsNullOrWhiteSpace(ModInit.MagicApnAshdiHost))
+                return;
+
+            string player = new RchClient(HttpContext, host, init, requestInfo).InfoConnected()?.player;
+            bool useInnerPlayer = string.IsNullOrWhiteSpace(player)
+                || player.Equals("inner", StringComparison.OrdinalIgnoreCase);
+            if (!useInnerPlayer)
+                return;
+
+            ApnHelper.ApplyInitConf(true, ModInit.MagicApnAshdiHost, init);
+            OnLog($"KlonFUN: увімкнено magic_apn для Ashdi (player={player ?? "unknown"}).");
         }
 
         private static string StripLampacArgs(string url)

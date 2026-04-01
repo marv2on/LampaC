@@ -14,6 +14,7 @@ using System.Security.Authentication;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Shared.Models.Events;
 
 namespace KlonFUN
 {
@@ -21,10 +22,11 @@ namespace KlonFUN
     {
         public static double Version => 2.0;
 
-        public static OnlinesSettings KlonFUN;
+        public static ModuleConfig KlonFUN;
         public static bool ApnHostProvided;
+        public static string MagicApnAshdiHost;
 
-        public static OnlinesSettings Settings
+        public static ModuleConfig Settings
         {
             get => KlonFUN;
             set => KlonFUN = value;
@@ -35,7 +37,16 @@ namespace KlonFUN
         /// </summary>
         public void Loaded(InitspaceModel initspace)
         {
-            KlonFUN = new OnlinesSettings("KlonFUN", "https://klon.fun", streamproxy: false, useproxy: false)
+            UpdateConfig();
+            EventListener.UpdateInitFile += UpdateConfig;
+
+            // Додаємо підтримку "уточнити пошук".
+            RegisterWithSearch("klonfun");
+        }
+
+        private void UpdateConfig()
+        {
+            KlonFUN = new ModuleConfig("KlonFUN", "https://klon.fun", streamproxy: false, useproxy: false)
             {
                 displayname = "KlonFUN",
                 displayindex = 0,
@@ -48,16 +59,24 @@ namespace KlonFUN
                 }
             };
 
-            var conf = ModuleInvoke.Init("KlonFUN", JObject.FromObject(KlonFUN));
+            var defaults = JObject.FromObject(KlonFUN);
+            defaults["magic_apn"] = new JObject()
+            {
+                ["ashdi"] = ApnHelper.DefaultHost
+            };
+
+            var conf = ModuleInvoke.Init("KlonFUN", defaults) ?? defaults;
             bool hasApn = ApnHelper.TryGetInitConf(conf, out bool apnEnabled, out string apnHost);
+            MagicApnAshdiHost = ApnHelper.TryGetMagicAshdiHost(conf);
+            conf.Remove("magic_apn");
             conf.Remove("apn");
             conf.Remove("apn_host");
-            KlonFUN = conf.ToObject<OnlinesSettings>();
+            KlonFUN = conf.ToObject<ModuleConfig>();
             if (hasApn)
                 ApnHelper.ApplyInitConf(apnEnabled, apnHost, KlonFUN);
-            ApnHostProvided = hasApn && apnEnabled && !string.IsNullOrWhiteSpace(apnHost);
+            ApnHostProvided = ApnHelper.IsEnabled(KlonFUN);
 
-            if (hasApn && apnEnabled)
+            if (ApnHostProvided)
             {
                 KlonFUN.streamproxy = false;
             }
@@ -66,9 +85,6 @@ namespace KlonFUN
                 KlonFUN.apnstream = false;
                 KlonFUN.apn = null;
             }
-
-            // Додаємо підтримку "уточнити пошук".
-            RegisterWithSearch("klonfun");
         }
 
         private static void RegisterWithSearch(string plugin)
@@ -107,6 +123,7 @@ namespace KlonFUN
 
         public void Dispose()
         {
+            EventListener.UpdateInitFile -= UpdateConfig;
         }
     }
 
