@@ -139,7 +139,7 @@ namespace Shared.PlaywrightCore
                     <meta name=""viewport"" content=""width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"">
                 </head>
                 <body>
-                    <iframe width=""560"" height=""400"" src=""{link}"" frameborder=""0"" allow=""*"" allowfullscreen></iframe>
+                    <iframe id=""player"" width=""560"" height=""400"" src=""{link}"" frameborder=""0"" allow=""*"" allowfullscreen></iframe>
                 </body>
             </html>";
         #endregion
