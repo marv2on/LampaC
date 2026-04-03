@@ -29,7 +29,7 @@ namespace Shared.Services
             => Encrypt(uri, null, verifyip: false, ex: ex, plugin: plugin, IsProxyImg: IsProxyImg);
 
         public static string Encrypt(string uri, ProxyLinkModel p, bool forceMd5 = false)
-            => Encrypt(uri, p.reqip, p.headers, p.proxy, p.plugin, p.verifyip, forceMd5: forceMd5);
+            => Encrypt(uri, p.reqip, p.headers, p.proxy, p.plugin, p.verifyip, forceMd5: p.md5 || forceMd5);
 
         public static string Encrypt(string uri, string reqip, List<HeadersModel> headers = null, WebProxy proxy = null, string plugin = null, bool verifyip = true, DateTime ex = default, bool forceMd5 = false, bool IsProxyImg = false)
         {
@@ -63,7 +63,11 @@ namespace Shared.Services
 
                 string link = hash.ToString();
 
-                var md = new ProxyLinkModel(verifyip ? reqip : null, headers, proxy, uri_clear, plugin, verifyip, ex: ex);
+                var md = new ProxyLinkModel(verifyip ? reqip : null, headers, proxy, uri_clear, plugin, verifyip, ex: ex)
+                {
+                    md5 = true
+                };
+
                 links.AddOrUpdate(link, md, (d, u) => md);
 
                 return link;

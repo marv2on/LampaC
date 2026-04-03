@@ -39,5 +39,7 @@ namespace Shared.Models.Proxy
         public string plugin { get; set; }
 
         public bool verifyip { get; set; }
+
+        public bool md5 { get; set; }
     }
 }

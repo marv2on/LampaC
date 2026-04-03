@@ -1,0 +1,74 @@
+﻿<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Вход</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        .box {
+            background: #fff;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+            width: 320px;
+        }
+
+        h2 {
+            margin-top: 0;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            margin-bottom: 12px;
+            box-sizing: border-box;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h2>Введите пароль</h2>
+        <form id="loginForm">
+            <input type="password" id="password" placeholder="Пароль" required />
+            <button type="submit">Войти</button>
+        </form>
+    </div>
+
+    <script>
+    document.getElementById('loginForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+
+      const password = document.getElementById('password').value;
+
+      // 180 дней
+      const maxAge = 60 * 60 * 24 * 180;
+
+      document.cookie = "accspasswd=" + encodeURIComponent(password) +
+        "; max-age=" + maxAge +
+        "; path=/";
+
+      window.location.href = "/adminpanel";
+    });
+    </script>
+</body>
+</html>
