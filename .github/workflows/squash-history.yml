@@ -1,0 +1,35 @@
+name: Squash history (one-time)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  squash:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Squash entire history into one commit
+        run: |
+          set -euo pipefail
+
+          git checkout --orphan squashed
+          git add -A
+          git -c user.name="marv2on" -c user.email="velr3on@gmail.com" \
+            commit -m "Initial commit"
+
+          git branch -D main
+          git branch -m main
+
+          git push --force origin main
+
+      - name: Done
+        run: |
+          echo "::notice::История сжата в один коммит, force-push выполнен."
